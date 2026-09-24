@@ -5,7 +5,7 @@ static delegates, the API an app calls; `StrategySupport` is the strategy-neutra
 strategy must remember to call. Split the audiences:
 
 - **`vaadin-fibers-spi`** (name open, `Q_module_names`) — a new Gradle subproject holding only the
-  SPI type, `…spi.UIFiber` (`Q_spi_name`). Minimal surface, exhaustive javadoc: every
+  SPI type, `…spi.UIFiberRunnerSpi` (`Q_spi_name`). Minimal surface, exhaustive javadoc: every
   precondition, every guarantee, every non-guarantee. No app calls it, ever.
 - **`vaadin-blocking-dialogs`** — the app-facing API, built on the SPI. The low-level primitives
   (`runLater`, `runUntilPark`, `parkAndAwait`, `accessSynchronously`, …) in one class, the helpers
@@ -32,9 +32,12 @@ app ──► vaadin-blocking-dialogs ──► vaadin-fibers-spi ◄── vaad
     broken" until it holds the lock across them (`Q_lock_between_parks`);
   - `complete()` / `fail()` run under the session lock, the API bridging lock-less callers
     through `session.access`;
-  - `runUntilFirstPark` takes no `Completable` (`Q_completable_param`); Hacky is rejected.
+  - `runUntilFirstPark` takes no `Completable` (`Q_completable_param`); Hacky is rejected;
+  - the SPI type is `UIFiberRunnerSpi`, its implementations `LoomUIFiberRunner` and the like
+    (`Q_spi_name`).
 - Postponed by Martin: the probe of the raw-lock release for background threads.
-- Next: the names.
+- Next: the module names (`Q_module_names`), the app-facing class name, and the prose rename
+  "strategy" → "runner".
 
 Graduates when the modules land: the founding reasoning to a `D_` (it rewrites
 `D_pluggable_strategy`'s cost paragraph and `D_spi_exactly_one`), the layering to the AGENTS.md
@@ -189,7 +192,7 @@ interface Completable<R> {
 ```java
 package com.github.mvysny.blockingdialogs.spi;
 
-public interface UIFiberStrategy {                       // Q_spi_name
+public interface UIFiberRunnerSpi {
     /**
      * Runs fiber as a new UI fiber and returns once it first parks or ends, holding the lock again.
      * Called holding the lock of session, outside any fiber. Between the call and its return
@@ -252,10 +255,28 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
 
 ## Open questions
 
-- **`Q_spi_name`** — `UIFiber` names the unit, but the SPI type is the thing that *runs* units:
-  `UIFiberStrategy`, `UIFiberScheduler`, `UIFiberRuntime`? And the app-facing primitives class: if
-  it holds only statics now (the SPI lookup moves behind it), `UIFibers.runLater(() -> …)` reads
-  well and drops the `BlockingExecutor.get().` prefix that made the split costly.
+- **`Q_spi_name`** — the SPI type is the thing that *runs* UI fibers, not a fiber. Settled
+  with Martin: **`UIFiberRunnerSpi`**. "Runner": it runs a `Runnable` in a highly controlled manner —
+  and parking is part of running (it decides when a fiber runs *and* when it stops), so
+  `newCompletable` belongs to it too. `Spi`: the API module depends on the SPI, so the type sits on
+  every app's classpath and in its autocomplete — the suffix says "not for you" where the package
+  can't. Implementations drop it: `LoomUIFiberRunner implements UIFiberRunnerSpi`, as in JCA. The
+  cost: two words for one thing, "strategy" in prose and "runner" in code — rename the prose
+  ("the loom runner", **One API, any runner**) when the modules land, as with "UI fiber".
+  Earlier candidates:
+  - **`UIFiberStrategy`** — every doc already says "strategy" (`D_pluggable_strategy`,
+    "the loom strategy", **One API, any strategy**); `LoomUIFiberStrategy`, `ThreadUIFiberStrategy`.
+  - **`UIFiberSpi`** — the JCA precedent: API class `Signature`, SPI class `SignatureSpi`, the API
+    delegating, apps never touching the SPI — exactly this layering. JDK casing `Spi`, not `SPI`.
+  - `UIFiberScheduler` — the role, but Loom readers hear "the virtual-thread scheduler", which we
+    don't replace. `…Provider` is the other JDK `.spi` convention (`FileSystemProvider`).
+  - **Not `…Executor`**: `Executor.execute` runs any task, some time, on some thread; this one
+    demands the session lock, runs synchronously to the first park, and owns parking. The name
+    invites `implements Executor` or `CompletableFuture.runAsync(…, it)`, both breaking the lock
+    contract. Today's `BlockingExecutor` carries the same flaw, and the split retires it.
+
+  And the app-facing primitives class: with the SPI lookup behind it, it holds only statics —
+  `UIFibers.runLater(() -> …)` reads well and drops the `BlockingExecutor.get().` prefix.
 - **`Q_module_names`** — `vaadin-fibers-spi` vs `vaadin-blocking-dialogs-spi` (matches the other
   artifactIds and the `configureMavenCentral` rule); package `…blockingdialogs.spi` either way?
 - **`Q_run_later_derived`** — two cracks in `runLater == access(runUntilPark)`:
