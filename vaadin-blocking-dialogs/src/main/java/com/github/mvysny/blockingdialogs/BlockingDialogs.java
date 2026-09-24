@@ -57,6 +57,13 @@ public final class BlockingDialogs {
     }
 
     /**
+     * {@link BlockingExecutor#runUntilPark}.
+     */
+    public static void runUntilPark(@NotNull Runnable block) {
+        BlockingExecutor.get().runUntilPark(block);
+    }
+
+    /**
      * {@link BlockingExecutor#access}, for background threads.
      */
     public static void access(@NotNull UI ui, @NotNull Runnable block) {

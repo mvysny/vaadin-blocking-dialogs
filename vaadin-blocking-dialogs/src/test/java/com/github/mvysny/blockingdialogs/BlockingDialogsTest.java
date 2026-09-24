@@ -349,6 +349,14 @@ public class BlockingDialogsTest {
         }
 
         @Test
+        public void runUntilParkReturnsOnceTheBlockParks() {
+            ScriptedBlockingExecutor.user.add(() -> _fireConfirm(_get(ConfirmDialog.class)));
+            BlockingDialogs.runUntilPark(() -> log.add("answer: " + BlockingDialogs.showAndAwait(confirmDialog())));
+            log.add("listener");
+            assertEquals(List.of("answer: CONFIRM", "listener"), log);
+        }
+
+        @Test
         public void runLaterInsideBlockStartsAtItsPark() {
             ScriptedBlockingExecutor.user.add(() -> log.add("user answers"));
             BlockingDialogs.runLater(() -> {

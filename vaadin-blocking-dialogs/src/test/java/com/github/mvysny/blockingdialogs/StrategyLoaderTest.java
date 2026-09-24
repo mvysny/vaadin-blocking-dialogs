@@ -98,6 +98,11 @@ public class StrategyLoaderTest {
         }
 
         @Override
+        public void runUntilPark(@NotNull Runnable block) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
             throw new UnsupportedOperationException();
         }
@@ -113,6 +118,11 @@ public class StrategyLoaderTest {
 
         @Override
         public void runLater(@NotNull Runnable block) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void runUntilPark(@NotNull Runnable block) {
             throw new UnsupportedOperationException();
         }
 

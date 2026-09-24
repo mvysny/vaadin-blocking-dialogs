@@ -64,6 +64,21 @@ request waits for the block's first park or end before responding — short and 
 endless park of `R_async_push_no_response`. Not promised: a first segment that ends without parking
 releases the lock like any listener, and a later click runs the listener again.
 
+## D_run_until_park — Why `runUntilPark` beside `runLater`, rather than one entry point that returns after the first park?
+
+Code after the call sometimes must see what the block did. SB-Emulators runs every Swing listener
+as a block, follows it with an epilogue that reconciles state, and its tests read that state
+without a Karibu lookup — the only thing draining the access queue after `_click`. Draining it at
+the call site works under loom by accident and not under session-unlock (**One API, any
+strategy**), whose request owes the first-park wait of `D_input_exclusion` anyway. Why not make
+`runLater` wait: inside a block it can't — the new block needs the lock its caller holds — so
+`runUntilPark` runs it inline, parks included. A different promise, a different name, as
+`UI.accessSynchronously` beside `UI.access`. Why loom mounts the first segment on the caller
+(`R_vt_scheduler`) rather than drain: a drain also runs the access tasks queued earlier; and a
+virtual caller, which can't mount it, throws rather than return early. Why exceptions go to the
+`ErrorHandler`, inline too: the later segments have no caller to throw to, and a block behaves the
+same wherever it was started from.
+
 ## D_two_helpers — Why only two `showAndAwait` helpers, rather than a `confirm(message)`, a Yes/No/Cancel and a text prompt?
 
 Every app builds its own dialogs — texts, themes, button order — so each ready-made helper would

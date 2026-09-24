@@ -86,6 +86,15 @@ public final class ScriptedBlockingExecutor implements BlockingExecutor {
         ui.access(() -> StrategySupport.runBlock(ui, block));
     }
 
+    /**
+     * Runs the block right here, inside a block or not: a scripted park doesn't park, so the whole
+     * block runs before this returns, its scripted user actions included.
+     */
+    @Override
+    public void runUntilPark(@NotNull Runnable block) {
+        StrategySupport.runBlock(StrategySupport.checkLockedUI(), block);
+    }
+
     @Override
     public <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
         checkUIThreadWithBlockingCapabilities();

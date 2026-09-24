@@ -75,10 +75,43 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
     @Override
     public void runLater(@NotNull Runnable block) {
         Objects.requireNonNull(block);
+        start(StrategySupport.checkLockedUI(), block, false);
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * The block's first segment runs on the calling thread, from inside {@link Thread#start()},
+     * rather than as an access task: access tasks queued earlier still wait for the lock's release.
+     *
+     * @throws IllegalStateException also on a virtual thread outside a block - a virtual request
+     *                               thread, a background virtual thread inside {@code ui.access()} -
+     *                               which can't carry the block.
+     */
+    @Override
+    public void runUntilPark(@NotNull Runnable block) {
+        Objects.requireNonNull(block);
         final UI ui = StrategySupport.checkLockedUI();
+        if (StrategySupport.isInBlock()) {
+            StrategySupport.runBlock(ui, block);
+            return;
+        }
+        if (Thread.currentThread().isVirtual()) {
+            throw new IllegalStateException("runUntilPark() can't run a block on " + Thread.currentThread()
+                    + ": a continuation can't mount on a virtual thread. Serve HTTP requests from platform threads;"
+                    + " from a background virtual thread, call runLater() inside ui.access()");
+        }
+        start(ui, block, true);
+    }
+
+    /**
+     * @param mountHere whether the block's first segment runs on the calling thread before this
+     *                  returns, rather than queued as an access task.
+     */
+    private static void start(@NotNull UI ui, @NotNull Runnable block, boolean mountHere) {
         final VaadinSession session = ui.getSession();
         final VirtualThreadAwareLock lock = VirtualThreadAwareLock.asVirtualThreadAware(session.getLockInstance());
-        LoomUtils.newVirtualThread(new SessionCarrier(session), "blocking-dialogs-ui-" + ui.getUIId(), () -> {
+        LoomUtils.newVirtualThread(new SessionCarrier(session, mountHere), "blocking-dialogs-ui-" + ui.getUIId(), () -> {
             VirtualThreadAwareLock.enterUIVirtualThread(lock);
             try {
                 StrategySupport.runBlock(ui, block);
@@ -116,13 +149,22 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
         @NotNull
         private final VaadinSession session;
 
-        SessionCarrier(@NotNull VaadinSession session) {
+        /**
+         * Whether the next submit - the block's start - mounts on the calling thread instead of being
+         * queued; that submit clears it. Volatile: the later submits come from whichever thread
+         * unparks the block.
+         */
+        private volatile boolean mountHere;
+
+        SessionCarrier(@NotNull VaadinSession session, boolean mountHere) {
             this.session = session;
+            this.mountHere = mountHere;
         }
 
         /**
-         * Queues {@code continuation} as an access task. Called on whichever thread starts or unparks
-         * the block.
+         * Queues {@code continuation} as an access task - or, for {@code runUntilPark()}'s start,
+         * mounts it at once: {@link Thread#start()} submits on the starting thread, which holds the
+         * lock on a platform thread. Called on whichever thread starts or unparks the block.
          *
          * @throws RejectedExecutionException if submits nest {@code MAX_NESTED_SUBMITS} deep on this
          *                                    thread: a continuation is feeding itself back in, and would
@@ -134,6 +176,11 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
          */
         @Override
         public void execute(@NotNull Runnable continuation) {
+            if (mountHere) {
+                mountHere = false;
+                mount(continuation);
+                return;
+            }
             final int[] depth = nestedSubmits.get();
             if (depth[0] >= MAX_NESTED_SUBMITS) {
                 throw new RejectedExecutionException("Continuation submits are " + MAX_NESTED_SUBMITS
@@ -151,8 +198,8 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
 
         /**
          * Runs {@code continuation} on the thread draining the access queue - whichever thread
-         * releases the session lock last. A continuation can't mount on a virtual thread
-         * ({@code WrongThreadException}), so a virtual drainer - a background virtual thread calling
+         * releases the session lock last - or on {@code runUntilPark()}'s caller. A continuation
+         * can't mount on a virtual thread ({@code WrongThreadException}), so a virtual drainer - a background virtual thread calling
          * {@code ui.access()}, a virtual request thread - hands it to a platform thread, which takes
          * the lock once the drainer lets go.
          */

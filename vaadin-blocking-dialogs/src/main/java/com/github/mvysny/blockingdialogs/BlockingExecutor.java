@@ -22,12 +22,21 @@ import java.util.function.Supplier;
  * <p>
  * A strategy registers its implementation in
  * {@code META-INF/services/com.github.mvysny.blockingdialogs.BlockingExecutor}, which is what
- * {@link #get()} finds - exactly one per app. A strategy implements {@link #runLater} and
- * {@link #parkAndAwait} with {@link StrategySupport}, which holds the strategy-neutral half:
+ * {@link #get()} finds - exactly one per app. A strategy implements {@link #runLater},
+ * {@link #runUntilPark} and {@link #parkAndAwait} with {@link StrategySupport}, which holds the
+ * strategy-neutral half:
  * <pre>{@code
  * public void runLater(Runnable block) {
  *     UI ui = StrategySupport.checkLockedUI();
  *     startBlockThread(() -> StrategySupport.runBlock(ui, block));  // the strategy's own part
+ * }
+ * public void runUntilPark(Runnable block) {
+ *     UI ui = StrategySupport.checkLockedUI();
+ *     if (StrategySupport.isInBlock()) {
+ *         StrategySupport.runBlock(ui, block);  // inline
+ *     } else {
+ *         startBlockThreadAndAwaitItsPark(() -> StrategySupport.runBlock(ui, block));
+ *     }
  * }
  * public <T> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
  *     checkUIThreadWithBlockingCapabilities();
@@ -72,6 +81,18 @@ public interface BlockingExecutor {
      *                               {@link UI#access}. Background threads call {@link #access}.
      */
     void runLater(@NotNull Runnable block);
+
+    /**
+     * Runs {@code block} as a new block, and returns once it parks or ends: the caller's next line
+     * sees what the block did up to its first park. Called inside a block, runs it inline instead -
+     * its parks park the calling block, and this returns once it ends. No other request of the
+     * session runs before this returns.
+     *
+     * @apiNote Everything else is as for {@link #runLater}, the exceptions included: they go to the
+     * {@link com.vaadin.flow.server.ErrorHandler}, never to the caller, inline too.
+     * @throws IllegalStateException as {@link #runLater} does.
+     */
+    void runUntilPark(@NotNull Runnable block);
 
     /**
      * {@link #runLater} for a background thread: {@code ui.access(() -> runLater(block))}.

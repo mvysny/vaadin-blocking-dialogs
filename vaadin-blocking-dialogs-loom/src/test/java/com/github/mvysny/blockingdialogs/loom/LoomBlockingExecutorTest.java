@@ -193,6 +193,107 @@ public class LoomBlockingExecutorTest {
     }
 
     /**
+     * No roundtrip between the call and the asserts: what the block did is there when the call
+     * returns.
+     */
+    @Nested
+    public class RunUntilPark {
+        @Test
+        public void returnsOnceTheBlockParks() {
+            final ConfirmDialog dialog = confirmDialog("Sure?");
+            BlockingDialogs.runUntilPark(() -> log.add("answer: " + BlockingDialogs.showAndAwait(dialog)));
+            assertTrue(dialog.isOpened());
+            assertEquals(List.of(), log);
+
+            _fireConfirm(dialog);
+            MockVaadin.clientRoundtrip();
+            assertEquals(List.of("answer: CONFIRM"), log);
+            assertEquals(List.of(), reportedErrors);
+        }
+
+        @Test
+        public void returnsOnceTheBlockEndsInAVirtualThreadOfItsOwn() {
+            final UI ui = UI.getCurrent();
+            final AtomicReference<Thread> thread = new AtomicReference<>();
+            BlockingDialogs.runUntilPark(() -> {
+                thread.set(Thread.currentThread());
+                log.add("block");
+            });
+            log.add("caller");
+            assertEquals(List.of("block", "caller"), log);
+            assertTrue(thread.get().isVirtual());
+            assertSame(ui, UI.getCurrent(), "the block's current instances are its own thread's");
+        }
+
+        @Test
+        public void runsNoAccessTaskQueuedEarlier() {
+            UI.getCurrent().access(() -> log.add("earlier task"));
+            BlockingDialogs.runUntilPark(() -> log.add("block"));
+            assertEquals(List.of("block"), log);
+            MockVaadin.clientRoundtrip();
+            assertEquals(List.of("block", "earlier task"), log);
+        }
+
+        @Test
+        public void insideABlockRunsInlineParksIncluded() {
+            final CompletableFuture<String> answer = new CompletableFuture<>();
+            BlockingDialogs.runLater(() -> {
+                log.add("A starts");
+                BlockingDialogs.runUntilPark(() -> log.add("B: " + BlockingDialogs.parkAndAwait(UI.getCurrent(), answer)));
+                log.add("A ends");
+            });
+            MockVaadin.clientRoundtrip();
+            assertEquals(List.of("A starts"), log);
+            answer.complete("resumed");
+            MockVaadin.clientRoundtrip();
+            assertEquals(List.of("A starts", "B: resumed", "A ends"), log);
+            assertEquals(List.of(), reportedErrors);
+        }
+
+        @Test
+        public void exceptionsGoToTheErrorHandlerInlineToo() {
+            final RuntimeException outside = new RuntimeException("outside a block");
+            BlockingDialogs.runUntilPark(() -> {
+                throw outside;
+            });
+            assertEquals(List.of(outside), reportedErrors);
+
+            final RuntimeException inside = new RuntimeException("inside a block");
+            BlockingDialogs.runLater(() -> {
+                BlockingDialogs.runUntilPark(() -> {
+                    throw inside;
+                });
+                log.add("A goes on");
+            });
+            // `true` keeps our own error handler instead of Karibu's fail-the-test one
+            MockVaadin.clientRoundtrip(true);
+            assertEquals(List.of(outside, inside), reportedErrors);
+            assertEquals(List.of("A goes on"), log);
+        }
+
+        @Test
+        public void refusesAVirtualThreadOutsideABlock() throws InterruptedException {
+            final UI ui = UI.getCurrent();
+            final VaadinSession session = VaadinSession.getCurrent();
+            final AtomicReference<Throwable> thrown = new AtomicReference<>();
+            session.unlock();
+            try {
+                Thread.ofVirtual().start(() -> ui.accessSynchronously(() -> {
+                    try {
+                        BlockingDialogs.runUntilPark(() -> log.add("block"));
+                    } catch (Throwable t) {
+                        thrown.set(t);
+                    }
+                })).join();
+            } finally {
+                session.lock();
+            }
+            assertInstanceOf(IllegalStateException.class, thrown.get());
+            assertEquals(List.of(), log);
+        }
+    }
+
+    /**
      * The thread that completes the future is the one that queues the block's next continuation.
      */
     @Nested

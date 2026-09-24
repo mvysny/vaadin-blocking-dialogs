@@ -78,7 +78,9 @@ Underneath, a block can wait for any `CompletableFuture`, not only a dialog's an
 component the wait belongs to, and the wait dies with it: a Save button waiting on its own progress
 bar, or a background job's result shown in a progress dialog. From a background thread,
 `BlockingDialogs.accessSynchronously(ui, block)` runs a block and waits for it, so a job can ask the
-user something halfway through.
+user something halfway through. When the listener's own code after the call must see what the block
+did, `BlockingDialogs.runUntilPark(block)` returns once the block has opened its first dialog, or
+ended.
 
 ## Limits
 

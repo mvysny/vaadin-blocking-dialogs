@@ -70,6 +70,10 @@ above and cut the fat — a marker already says where a claim came from.
   matrix]**
 - A continuation cannot run on a virtual carrier: `WrongThreadException` at
   `VirtualThread.runContinuation`. **[verified, vaadin-loom]**
+- `start()` on a platform thread hands the first continuation to the scheduler synchronously
+  (`submitRunContinuation` → `scheduler.execute`), and nothing after it assumes it hasn't run: the
+  scheduler may run it right there, and `start()` returns at its first unmount or end. **[src, JBR
+  25.0.4; verified, `LoomBlockingExecutorTest`]**
 - `Thread.ofVirtual()` inside such a thread inherits its scheduler; `Thread.ofPlatform()` and
   `new Thread()` don't. **[verified, JDK 25, vaadin-loom]**
 - `ExecutorService.shutdownNow()` interrupts parked virtual threads, and the interrupt unparks them
