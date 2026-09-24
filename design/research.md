@@ -28,6 +28,9 @@ above and cut the fat — a marker already says where a claim came from.
 - The pending tasks and the push both run *before* `getLockInstance().unlock()` really releases
   the lock, so a request queued on the lock sees their effects — an `access` task that opens a modal
   dialog has it open before the next request is handled. **[src, Vaadin 25.3.0]**
+- A push's UIDL runs the pending `ui.beforeClientResponse(...)` executions, just as a response's
+  does: `AtmospherePushConnection` and the request both go through `UidlWriter.createUidl`, whose
+  `encodeChanges` calls `StateTree.runExecutionsBeforeClientResponse()` first. **[src, Vaadin 25.3.0]**
 - `session.access()` from a thread that finds the lock free takes it and releases it at once
   (`ensureAccessQueuePurged`), so that thread drains the whole queue — a background thread can end
   up running other threads' access tasks. **[src, Vaadin 25.3.0]**

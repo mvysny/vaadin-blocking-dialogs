@@ -92,6 +92,8 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   curtain at handoff — new machinery that only patches the window instead of closing it.
   `runUntilPark` is the same wait at the call site instead of before the response
   (`D_run_until_park`): release, wait for the first park or end, re-take, return.
+  The release must bypass `VaadinSession.unlock()`, whose ultimate unlock would push the
+  listener's half-done state: see `spi.md`, "What `runUntilPark` really promises".
 - **`Q_cancellation`** — mostly answered by the anchor model (`D_anchored_wait`): a parked worker is released because its future is cancelled when its anchor dies,
   and it unwinds through `CancellationException`; session destroy and tab close both reach it
   (`R_session_destroy_detaches`). Left for this strategy: a closed `@PreserveOnRefresh` tab is only noticed at
