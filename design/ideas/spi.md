@@ -208,6 +208,7 @@ public interface UIFiberStrategy {                       // Q_spi_name
 public interface Completable<R> {
     /** Called holding the session lock; the first complete() or fail() wins. */
     void complete(R value);
+    /** The wait is dead (a CancellationException, rethrown as-is by park()) or failed (any other cause). */
     void fail(Throwable cause);
     /**
      * Called once, by a fiber of the session; returns at once if already completed. The lock is
@@ -307,6 +308,21 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
   fiber may have followed its anchor to a new UI, leaving the old one detached. The `Condition`
   needs the lock; loom wouldn't care; and the lock orders the wake-up: the fiber resumes only after
   the completing thread lets go.
-- **`Q_future_cancel`** — the anchor dies: today the app's future is cancelled
-  (`D_anchored_wait`). With a `Completable`, the API fails it; does it still cancel the app's
-  future too, so a background job sees the wait is gone?
+- **`Q_future_cancel`** — settled: yes. When the anchor dies the API fails the `Completable` (the
+  fiber wakes) *and* cancels the app's future, so a background job sees the wait is gone — today's
+  promise that the anchor's detach cancels it (`D_anchored_wait`) stays. The first `complete()` /
+  `fail()` wins, so an answer arriving in the detaching request isn't overturned.
+- **Who calls `fail()`** — only the API, twice:
+  1. the anchor watch, once the anchor stays detached: `fail(new CancellationException())`. The
+     verdict waits for the detaching request's end, as today, so a `@PreserveOnRefresh` re-attach
+     survives it; session destroy and tab close reach it too (`R_session_destroy_detaches`);
+  2. `parkAndAwait`'s bridge: the app's future failed → `fail(cause)`; the app cancelled it →
+     `fail(CancellationException)` — through `session.access` when lock-less.
+
+  Never a dialog's Cancel button — a user's Cancel is an *answer*, `complete(CANCEL)`
+  (`BlockingDialogs`' "Cancellation means the wait is dead"); never an interrupt, which is
+  `park()` throwing `InterruptedException`; no strategy, as far as seen. `park()` then throws as
+  `CompletableFuture.get()` does: a `CancellationException` as-is, any other cause in an
+  `ExecutionException` — `CompletableFuture` treats `completeExceptionally(new
+  CancellationException())` like `cancel()`, so loom gets it by wrapping one, and `fail(Throwable)`
+  needs no `cancel()` beside it.
