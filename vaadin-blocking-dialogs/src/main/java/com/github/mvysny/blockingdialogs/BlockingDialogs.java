@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 /**
- * Blocking dialogs, the way Swing's {@code JOptionPane} does them: start a block with
+ * Blocking dialogs, the way Swing's {@code JOptionPane} does them: start a UI fiber with
  * {@link #runLater}, and inside it a dialog call returns the user's answer.
  * <pre>{@code
  * button.addClickListener(e -> BlockingDialogs.runLater(() -> {
@@ -42,7 +42,7 @@ import java.util.function.Supplier;
  * <p>
  * <b>Cancellation means "the wait is dead", nothing else.</b> A user-facing Cancel is an answer: the
  * dialog completes its future with a cancel value. So a progress dialog's Cancel must not cancel
- * the future the block awaits, or the block ends silently; await an outcome future, and let Cancel
+ * the future the UI fiber awaits, or the UI fiber ends silently; await an outcome future, and let Cancel
  * stop the job and complete the outcome.
  */
 public final class BlockingDialogs {
@@ -52,54 +52,54 @@ public final class BlockingDialogs {
     /**
      * {@link BlockingExecutor#runLater}.
      */
-    public static void runLater(@NotNull Runnable block) {
-        BlockingExecutor.get().runLater(block);
+    public static void runLater(@NotNull Runnable body) {
+        BlockingExecutor.get().runLater(body);
     }
 
     /**
      * {@link BlockingExecutor#runUntilPark}.
      */
-    public static void runUntilPark(@NotNull Runnable block) {
-        BlockingExecutor.get().runUntilPark(block);
+    public static void runUntilPark(@NotNull Runnable body) {
+        BlockingExecutor.get().runUntilPark(body);
     }
 
     /**
      * {@link BlockingExecutor#access}, for background threads.
      */
-    public static void access(@NotNull UI ui, @NotNull Runnable block) {
-        BlockingExecutor.get().access(ui, block);
+    public static void access(@NotNull UI ui, @NotNull Runnable body) {
+        BlockingExecutor.get().access(ui, body);
     }
 
     /**
      * {@link BlockingExecutor#accessSynchronously(UI, Runnable)}.
      */
-    public static void accessSynchronously(@NotNull UI ui, @NotNull Runnable block) {
-        BlockingExecutor.get().accessSynchronously(ui, block);
+    public static void accessSynchronously(@NotNull UI ui, @NotNull Runnable body) {
+        BlockingExecutor.get().accessSynchronously(ui, body);
     }
 
     /**
      * {@link BlockingExecutor#accessSynchronously(UI, Supplier)}.
      */
-    public static <T> T accessSynchronously(@NotNull UI ui, @NotNull Supplier<T> block) {
-        return BlockingExecutor.get().accessSynchronously(ui, block);
+    public static <T> T accessSynchronously(@NotNull UI ui, @NotNull Supplier<T> body) {
+        return BlockingExecutor.get().accessSynchronously(ui, body);
     }
 
     /**
      * {@link BlockingExecutor#parkAndAwait}.
      *
-     * @throws IllegalStateException outside a block.
+     * @throws IllegalStateException outside a UI fiber.
      */
     public static <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
         return BlockingExecutor.get().parkAndAwait(anchor, future);
     }
 
     /**
-     * {@link BlockingExecutor#checkUIThreadWithBlockingCapabilities()}.
+     * {@link BlockingExecutor#checkInUIFiber()}.
      *
-     * @throws IllegalStateException outside a block.
+     * @throws IllegalStateException outside a UI fiber.
      */
-    public static void checkUIThreadWithBlockingCapabilities() {
-        BlockingExecutor.get().checkUIThreadWithBlockingCapabilities();
+    public static void checkInUIFiber() {
+        BlockingExecutor.get().checkInUIFiber();
     }
 
     /**
@@ -116,16 +116,16 @@ public final class BlockingDialogs {
      *
      * @apiNote Without a {@link Dialog.DialogCloseActionEvent} listener, Escape and an outside click
      * close the dialog without answering; the closed dialog detaches, which ends the wait and the
-     * block.
+     * UI fiber.
      * @param dialog the anchor of the wait.
      * @return the value {@code answer} completed with.
-     * @throws IllegalStateException outside a block.
+     * @throws IllegalStateException outside a UI fiber.
      * @throws CancellationException if the dialog detached without an answer.
      */
     public static <T> T showAndAwait(@NotNull Dialog dialog, @NotNull CompletableFuture<T> answer) {
         Objects.requireNonNull(answer);
         final BlockingExecutor executor = BlockingExecutor.get();
-        executor.checkUIThreadWithBlockingCapabilities();
+        executor.checkInUIFiber();
         dialog.open();
         try {
             return executor.parkAndAwait(dialog, answer);
@@ -150,13 +150,13 @@ public final class BlockingDialogs {
      * }</pre>
      * The dialog may be shown again: the listeners added here are removed on return.
      *
-     * @throws IllegalStateException outside a block.
+     * @throws IllegalStateException outside a UI fiber.
      * @throws CancellationException if the dialog detached without an answer.
      */
     @NotNull
     public static ConfirmDialogOutcome showAndAwait(@NotNull ConfirmDialog dialog) {
         final BlockingExecutor executor = BlockingExecutor.get();
-        executor.checkUIThreadWithBlockingCapabilities();
+        executor.checkInUIFiber();
         final CompletableFuture<ConfirmDialogOutcome> answer = new CompletableFuture<>();
         final List<Registration> listeners = List.of(
                 dialog.addConfirmListener(new Answer<>(answer, ConfirmDialogOutcome.CONFIRM)),

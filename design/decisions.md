@@ -26,14 +26,14 @@ thread per open dialog and must run on a worker so the request can respond
 picked where the app is wired (**One API, any strategy**). Why not loom only: its JDK floor and its
 reach into JDK internals are what a conservative line-of-business app cannot take. Why not
 session-unlock only: it is one probe old, and gives up virtual threads' scale. The cost we carry:
-the API is only what both can implement — a block may not lean on what one strategy gives for free,
+the API is only what both can implement — a UI fiber may not lean on what one strategy gives for free,
 such as a bare `future.get()` that loom tolerates.
 
 ## D_anchored_wait — Why does a wait end when its anchor detaches, rather than with an executor scope per UI, session or tab?
 
 A wait belongs to a component — a dialog anchors its own answer — and that component's detach is
 the one signal every death of a wait sends: navigating away, closing the dialog, a session destroy
-and a tab close all detach it (`R_session_destroy_detaches`). A scope — a registry of parked blocks
+and a tab close all detach it (`R_session_destroy_detaches`). A scope — a registry of parked UI fibers
 per UI or session, killed from outside — would duplicate that signal as state both strategies keep
 in step, so there is none, and no backstop either. The verdict waits for the detaching UI's next
 response, because F5 on a `@PreserveOnRefresh` route detaches the view before it re-attaches it
@@ -46,37 +46,37 @@ thread under session-unlock.
 ## D_spi_exactly_one — Why is the strategy found through `ServiceLoader`, exactly one, rather than handed in by the app?
 
 A setter, or an executor the app builds, is global mutable state that apps take up as a wiring
-API — and then "which strategy runs this block?" has more than one answer, and every call must route
+API — and then "which strategy runs this UI fiber?" has more than one answer, and every call must route
 by executor. With exactly one on the classpath the strategy is a dependency choice (**One API, any
 strategy**), `BlockingDialogs` is statics over `BlockingExecutor.get()`, and none or two is an error
 on every call. Tests get their strategy the same way, from a `META-INF/services` file in test
 resources; a strategy that needs configuration reads it itself, as SPI providers do. The cost: one
 classpath runs one strategy, so demoing both takes one app per strategy.
 
-## D_input_exclusion — Why does `runLater` keep the session's other requests out until the block's first park, rather than just queue the block?
+## D_input_exclusion — Why does `runLater` keep the session's other requests out until the UI fiber's first park, rather than just queue the UI fiber?
 
 The double-clicked Save button: the second click must find the first click's dialog already open,
 so that Vaadin's server-side modality drops it — Swing's "a modal blocks input from
-`setVisible(true)`". Without it every blocking action runs twice on a fast double click. Loom gives it by construction: the block's
+`setVisible(true)`". Without it every blocking action runs twice on a fast double click. Loom gives it by construction: the UI fiber's
 first segment runs inside the click request's ultimate unlock, before the lock is really released
-(`R_unlock_pushes`). A strategy whose block starts after the request responds pays for it: the
-request waits for the block's first park or end before responding — short and bounded, unlike the
+(`R_unlock_pushes`). A strategy whose UI fiber starts after the request responds pays for it: the
+request waits for the UI fiber's first park or end before responding — short and bounded, unlike the
 endless park of `R_async_push_no_response`. Not promised: a first segment that ends without parking
 releases the lock like any listener, and a later click runs the listener again.
 
 ## D_run_until_park — Why `runUntilPark` beside `runLater`, rather than one entry point that returns after the first park?
 
-Code after the call sometimes must see what the block did. SB-Emulators runs every Swing listener
-as a block, follows it with an epilogue that reconciles state, and its tests read that state
+Code after the call sometimes must see what the UI fiber did. SB-Emulators runs every Swing listener
+as a UI fiber, follows it with an epilogue that reconciles state, and its tests read that state
 without a Karibu lookup — the only thing draining the access queue after `_click`. Draining it at
 the call site works under loom by accident and not under session-unlock (**One API, any
 strategy**), whose request owes the first-park wait of `D_input_exclusion` anyway. Why not make
-`runLater` wait: inside a block it can't — the new block needs the lock its caller holds — so
+`runLater` wait: inside a UI fiber it can't — the new UI fiber needs the lock its caller holds — so
 `runUntilPark` runs it inline, parks included. A different promise, a different name, as
 `UI.accessSynchronously` beside `UI.access`. Why loom mounts the first segment on the caller
 (`R_vt_scheduler`) rather than drain: a drain also runs the access tasks queued earlier; and a
 virtual caller, which can't mount it, throws rather than return early. Why exceptions go to the
-`ErrorHandler`, inline too: the later segments have no caller to throw to, and a block behaves the
+`ErrorHandler`, inline too: the later segments have no caller to throw to, and a UI fiber behaves the
 same wherever it was started from.
 
 ## D_two_helpers — Why only two `showAndAwait` helpers, rather than a `confirm(message)`, a Yes/No/Cancel and a text prompt?
@@ -106,7 +106,7 @@ instead.
 
 ## D_loom_jdk_gate — Why does loom refuse to start on Java 21-23, rather than warn, or compile for Java 24+?
 
-There a block parking inside any monitor deadlocks its session for good (`R_vt_pinning`), a
+There a UI fiber parking inside any monitor deadlocks its session for good (`R_vt_pinning`), a
 JDK-internal monitor included, so no code review rules it out. A warning or a README line is how
 vaadin-loom#2 happened: nobody reads either until the session hangs. So the executor's constructor
 throws, naming JEP 491, and `BlockingExecutor.get()` repeats it on every call — unless
@@ -114,3 +114,14 @@ throws, naming JEP 491, and `BlockingExecutor.get()` repeats it on every call �
 JDK 21 job sets it, so the loom tests still run on the floor we compile for. Why not `--release 24`:
 the same protection as a cryptic `UnsupportedClassVersionError`, with no way out. The cost: the gate
 is per JVM, so an app that never parks inside a monitor still has to opt in.
+
+## D_ui_fiber — Why call the parkable unit a "UI fiber", rather than a block, a task or a UI thread?
+
+The code a strategy runs — one thread for its whole life, holding the session lock except while
+parked — needs a noun of its own. "Block" collided with itself: a virtual thread that *blocks*
+inside a `synchronized` *block*, `finally` blocks, a modal that blocks input. "Task" is Vaadin's
+access task, "coroutine" Kotlin's, "flow" Vaadin's own name, "strand" is already a verb here. "UI
+thread" suggests a `java.lang.Thread` per unit, which is loom's shape but not the concept's. A fiber
+yields only where it chooses — here, at a park - which holds whether a virtual or a platform thread
+backs it; "UI" in front keeps it from reading as Loom's own virtual thread. So always "UI fiber",
+in identifiers too (`checkInUIFiber`), and the code handed in is its `body`.

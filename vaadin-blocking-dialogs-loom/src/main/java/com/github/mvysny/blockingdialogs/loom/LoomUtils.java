@@ -37,7 +37,7 @@ final class LoomUtils {
 
     /**
      * Resolves the reflection up front, so that a JDK without it fails at startup rather than at the
-     * first block.
+     * first UI fiber.
      *
      * @throws IllegalStateException if this JDK lacks either of the two internals, or
      *                               {@code --add-opens} is missing.
@@ -63,7 +63,7 @@ final class LoomUtils {
     /**
      * An unstarted virtual thread that runs its continuations on {@code carrier} - and only its own:
      * <pre>{@code
-     * LoomUtils.newVirtualThread(carrier, "block", () -> {
+     * LoomUtils.newVirtualThread(carrier, "ui-fiber", () -> {
      *     // runs on carrier
      *     Thread.ofVirtual().start(() -> {
      *         // runs on a pool of platform carriers, not on carrier
@@ -142,7 +142,7 @@ final class LoomUtils {
                 field.setAccessible(true);
             } catch (ReflectiveOperationException | RuntimeException e) {
                 throw new IllegalStateException("Cannot read java.lang.VirtualThread.runContinuation on "
-                        + Runtime.version() + "; it tells a block's own continuations from those of the threads"
+                        + Runtime.version() + "; it tells a UI fiber's own continuations from those of the threads"
                         + " it starts. Is --add-opens java.base/java.lang=ALL-UNNAMED set?", e);
             }
             runContinuation = field;

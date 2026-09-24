@@ -93,12 +93,12 @@ public class StrategyLoaderTest {
      */
     public static final class OtherStrategy implements BlockingExecutor {
         @Override
-        public void runLater(@NotNull Runnable block) {
+        public void runLater(@NotNull Runnable body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public void runUntilPark(@NotNull Runnable block) {
+        public void runUntilPark(@NotNull Runnable body) {
             throw new UnsupportedOperationException();
         }
 
@@ -117,12 +117,12 @@ public class StrategyLoaderTest {
         }
 
         @Override
-        public void runLater(@NotNull Runnable block) {
+        public void runLater(@NotNull Runnable body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public void runUntilPark(@NotNull Runnable block) {
+        public void runUntilPark(@NotNull Runnable body) {
             throw new UnsupportedOperationException();
         }
 

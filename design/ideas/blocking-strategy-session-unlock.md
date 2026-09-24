@@ -36,19 +36,19 @@ try {
 
 **It must not be the request thread.** Parked there, the push arrives but is stamped async, so the
 client never ends the request: the spinner spins forever and the answering click is postponed
-until the park gives up (`R_async_push_no_response`). So `run(block)` hands the block to a worker
+until the park gives up (`R_async_push_no_response`). So `run(body)` hands the UI fiber to a worker
 platform thread and returns; the request responds normally; the worker takes the session lock,
-sets the `CurrentInstance`s, runs the block, and does the unlock/park/relock dance around each
+sets the `CurrentInstance`s, runs the UI fiber, and does the unlock/park/relock dance around each
 await. That shape is measured and works.
 
 **Keeping one Java stack is load-bearing.** The obvious alternative — two `ui.access(...)` lambdas
-around the block — cannot work, because `if (confirm(…))` must return into the middle of user code.
-Holding the lock across the whole block and dropping it only around the park is what preserves
+around the UI fiber — cannot work, because `if (confirm(…))` must return into the middle of user code.
+Holding the lock across the whole UI fiber and dropping it only around the park is what preserves
 that stack.
 
 **The framing that makes this a small hack**, and the line worth carrying into the eventual `D_`:
 the worker is the ordinary Vaadin "background thread updates the UI under the session lock"
-pattern. The one unusual move is holding that lock across the *whole* block rather than one short
+pattern. The one unusual move is holding that lock across the *whole* UI fiber rather than one short
 burst — a supported-API shape (`VaadinSession.lock()` / `getLockInstance()` are public), where loom
 needs a package-private reflection hack plus `--add-opens`.
 
@@ -83,7 +83,7 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   `INLINE` executor for tests (then the suite doesn't exercise the real strategy — the classic
   hazard), or a test hook that waits until the worker is parked or finished before each lookup
   (Karibu's `TestingLifecycleHook.awaitBeforeLookup` looks like the seam).
-- **`Q_modal_gap`** — now a requirement: `runLater` promises input exclusion until the block's
+- **`Q_modal_gap`** — now a requirement: `runLater` promises input exclusion until the UI fiber's
   first park or end (`D_input_exclusion`). The handoff opens a window
   loom does not have — the request responds *before* the worker has the lock (3 ms in the probe; a
   non-fair lock queue under load), so a fast second click is processed first. Candidate fix, to
@@ -99,7 +99,7 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
 - **`Q_stale_after_relock`** — while unlocked, other requests mutate the UI freely; the UI may
   detach, the session may invalidate. On re-lock, rebind the `CurrentInstance`s to
   the anchor's last UI, as `StrategySupport.awaitAnchored` already does — shared with loom, not new risk.
-- **`Q_reentrancy`** — nested dialogs, and a block started from inside a block. Hold-count
+- **`Q_reentrancy`** — nested dialogs, and a UI fiber started from inside a UI fiber. Hold-count
   bookkeeping must survive N levels; *Await Lock* dissolves it. The probe only did one level.
 - **`Q_worker_pool`** — who owns the pool: one per session, per UI, or app-wide? Bounded? What
   happens when it is exhausted — reject, queue, or run inline and deadlock-loudly? Name the threads so

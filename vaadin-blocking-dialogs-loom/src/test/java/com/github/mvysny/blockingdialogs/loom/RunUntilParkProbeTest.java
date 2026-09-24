@@ -52,15 +52,15 @@ public class RunUntilParkProbeTest {
         MockVaadin.tearDown();
     }
 
-    /** Does a block woken by the {@code runUntilPark} block run before the call returns? */
+    /** Does a UI fiber woken by the {@code runUntilPark} UI fiber run before the call returns? */
     @Test
-    public void aBlockWokenByTheCallIsNotSettledWhenItReturns() {
+    public void aUIFiberWokenByTheCallIsNotSettledWhenItReturns() {
         final CompletableFuture<String> answer = new CompletableFuture<>();
         BlockingDialogs.runUntilPark(() -> log.add("A resumed: " + BlockingDialogs.parkAndAwait(UI.getCurrent(), answer)));
         BlockingDialogs.runUntilPark(() -> answer.complete("yes"));   // the dialog's OK click
-        System.out.println("PROBE woken block, right after the OK click's runUntilPark: " + log);
+        System.out.println("PROBE woken UI fiber, right after the OK click's runUntilPark: " + log);
         MockVaadin.clientRoundtrip();
-        System.out.println("PROBE woken block, after a roundtrip: " + log);
+        System.out.println("PROBE woken UI fiber, after a roundtrip: " + log);
     }
 
     /** Does an IO unmount count as "parks"? */
@@ -108,8 +108,8 @@ public class RunUntilParkProbeTest {
         final UI newUI = UI.getCurrent();
         _fireConfirm(_get(ConfirmDialog.class));
         MockVaadin.clientRoundtrip();
-        System.out.println("PROBE F5 inline: inner block after park sees " + name(insideAfterPark.get(), oldUI, newUI)
-                + ", outer block after runUntilPark sees " + name(outerAfterInline.get(), oldUI, newUI));
+        System.out.println("PROBE F5 inline: inner UI fiber after park sees " + name(insideAfterPark.get(), oldUI, newUI)
+                + ", outer UI fiber after runUntilPark sees " + name(outerAfterInline.get(), oldUI, newUI));
     }
 
     private static String name(UI ui, UI oldUI, UI newUI) {

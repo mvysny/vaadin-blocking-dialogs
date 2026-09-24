@@ -122,15 +122,15 @@ above and cut the fat — a marker already says where a claim came from.
   listeners see the closing UI as `UI.getCurrent()`, whichever tab's request reaps it. **[src, Vaadin
   25.3.0]**
 
-## R_vt_unmount_releases_lock — loom: every unmount of a block releases the session lock, not only a park
+## R_vt_unmount_releases_lock — loom: every unmount of a UI fiber releases the session lock, not only a park
 
-- A block's continuation ends at *any* unmount, and the carrier's `session.access` task ends with
+- A UI fiber's continuation ends at *any* unmount, and the carrier's `session.access` task ends with
   it, so the lock drops. A blocking socket read (a JDBC query) and `Thread.sleep` do this just as
   `parkAndAwait` does. **[verified 2026-09-24, Vaadin 25.3.0, Karibu 2.7.3, JBR 25.0.4 —
   `IoUnmountProbeTest`]**
-- Another request of the session runs between two statements of the block, and a second thread
-  can take the session lock while the block is mid-read. **[verified, same]**
-- IO before the block's first dialog lets a double click in: the second click finds no modal open
+- Another request of the session runs between two statements of the UI fiber, and a second thread
+  can take the session lock while the UI fiber is mid-read. **[verified, same]**
+- IO before the UI fiber's first dialog lets a double click in: the second click finds no modal open
   and starts the blocking action a second time. **[verified, same]**
 - A contended `ReentrantLock`, `BlockingQueue.take()` and `synchronized` on JDK 24+ unmount too;
   file IO does not (the JDK pins the carrier for it). **[unverified]**

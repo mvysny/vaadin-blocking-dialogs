@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Taking the Vaadin session lock from a block's virtual thread, which without
+ * Taking the Vaadin session lock from a UI fiber's virtual thread, which without
  * {@link VirtualThreadAwareLock} recurses until {@link StackOverflowError}: the virtual thread can
  * never win the lock its own carrier holds, and every release resubmits its continuation as an access
  * task, which re-locks and re-releases, forever (vaadin-loom#3).
@@ -59,7 +59,7 @@ public class VirtualThreadAwareLockTest {
     public void lockAndUnlockSession() {
         final VaadinSession session = VaadinSession.getCurrent();
         final AtomicBoolean gotTheLock = new AtomicBoolean();
-        runInBlock(() -> {
+        runInUIFiber(() -> {
             session.lock();
             gotTheLock.set(true);
             session.unlock();
@@ -73,7 +73,7 @@ public class VirtualThreadAwareLockTest {
         final UI ui = UI.getCurrent();
         final AtomicBoolean ran = new AtomicBoolean();
         // accessSynchronously() calls lock() unconditionally - it never consults hasLock()
-        runInBlock(() -> ui.accessSynchronously(() -> ran.set(true)));
+        runInUIFiber(() -> ui.accessSynchronously(() -> ran.set(true)));
         assertTrue(ran.get());
         assertEquals(List.of(), reportedErrors);
     }
@@ -82,14 +82,14 @@ public class VirtualThreadAwareLockTest {
     public void hasLock() {
         final VaadinSession session = VaadinSession.getCurrent();
         final AtomicBoolean hasLock = new AtomicBoolean();
-        runInBlock(() -> hasLock.set(session.hasLock()));
+        runInUIFiber(() -> hasLock.set(session.hasLock()));
         assertTrue(hasLock.get(), "the carrier holds the session lock, so the virtual thread effectively does too");
     }
 
     @Test
     public void unlockingMoreThanLockingFails() {
         final VaadinSession session = VaadinSession.getCurrent();
-        runInBlock(session::unlock);
+        runInUIFiber(session::unlock);
         assertEquals(1, reportedErrors.size(), "expected exactly one error, got " + reportedErrors);
         final Throwable error = reportedErrors.get(0);
         assertInstanceOf(IllegalStateException.class, error);
@@ -105,7 +105,7 @@ public class VirtualThreadAwareLockTest {
         final VaadinSession session = VaadinSession.getCurrent();
         final AtomicReference<Boolean> acquired = new AtomicReference<>();
 
-        runInBlock(() -> {
+        runInUIFiber(() -> {
             Thread.ofPlatform().start(() -> {
                 final boolean got = session.getLockInstance().tryLock();
                 if (got) {
@@ -127,7 +127,7 @@ public class VirtualThreadAwareLockTest {
     }
 
     /**
-     * Pretend mode is gated on the marker a block sets, not on {@link Thread#isVirtual()} and not on
+     * Pretend mode is gated on the marker a UI fiber sets, not on {@link Thread#isVirtual()} and not on
      * {@code VaadinSession.getCurrent() == this} - either of those would hand a no-op lock to any
      * background virtual thread that happens to have a current session, and the session would
      * silently stop being protected.
@@ -155,13 +155,13 @@ public class VirtualThreadAwareLockTest {
     }
 
     /**
-     * A virtual thread started inside a block inherits the block's scheduler but carries no marker;
+     * A virtual thread started inside a UI fiber inherits the UI fiber's scheduler but carries no marker;
      * {@link LoomUtils#newVirtualThread} carries it off the UI thread, so it takes the session lock
      * like any background thread: it blocks until the UI thread releases the lock, rather than
      * recursing.
      */
     @Test
-    public void virtualThreadStartedInsideABlockTakesTheRealLock() throws InterruptedException {
+    public void virtualThreadStartedInsideAUIFiberTakesTheRealLock() throws InterruptedException {
         final VaadinSession session = VaadinSession.getCurrent();
         final AtomicReference<Thread> child = new AtomicReference<>();
         final AtomicBoolean gotTheLock = new AtomicBoolean();
@@ -186,7 +186,7 @@ public class VirtualThreadAwareLockTest {
     }
 
     /**
-     * A block that loses its marker is back to spinning on the session lock its own carrier holds.
+     * A UI fiber that loses its marker is back to spinning on the session lock its own carrier holds.
      * The depth guard in the carrier must cut that short instead of letting it reach
      * {@link StackOverflowError}.
      */
@@ -209,26 +209,26 @@ public class VirtualThreadAwareLockTest {
         assertEquals(List.of(), reportedErrors);
 
         // The session survived: the runaway was cut before it could take the stack with it. The
-        // block stays stranded, but a stranded virtual thread is never resubmitted, so it can't
+        // UI fiber stays stranded, but a stranded virtual thread is never resubmitted, so it can't
         // restart the runaway either.
         assertTrue(session.getLockInstance().tryLock(), "the session lock must still be usable");
     }
 
     /**
-     * Runs {@code block} as a block and drains the UI queue. Any failure is routed to the session
+     * Runs {@code body} as a UI fiber and drains the UI queue. Any failure is routed to the session
      * error handler, so assert on {@link #reportedErrors} rather than expecting a throw.
      */
-    private void runInBlock(Runnable block) {
+    private void runInUIFiber(Runnable body) {
         final AtomicBoolean finished = new AtomicBoolean();
         BlockingDialogs.runLater(() -> {
             try {
-                block.run();
+                body.run();
             } finally {
                 finished.set(true);
             }
         });
         // `true` keeps our own error handler instead of Karibu's fail-the-test one
         MockVaadin.clientRoundtrip(true);
-        assertTrue(finished.get(), "the block never ran to completion - did it unmount?");
+        assertTrue(finished.get(), "the UI fiber never ran to completion - did it unmount?");
     }
 }

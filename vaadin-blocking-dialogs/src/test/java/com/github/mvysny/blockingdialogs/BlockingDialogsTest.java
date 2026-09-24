@@ -54,7 +54,7 @@ public class BlockingDialogsTest {
     }
 
     /**
-     * What the blocks of a test did, in order.
+     * What the UI fibers of a test did, in order.
      */
     private final List<String> log = new ArrayList<>();
 
@@ -214,7 +214,7 @@ public class BlockingDialogsTest {
             ScriptedBlockingExecutor.endRequest();
             assertEquals(List.of("still here"), log);
             assertNotSame(oldUI, view.getUI().orElseThrow());
-            assertSame(view.getUI().orElseThrow(), uiAfterPark.get(), "the block follows its anchor to the new UI");
+            assertSame(view.getUI().orElseThrow(), uiAfterPark.get(), "the UI fiber follows its anchor to the new UI");
         }
 
         @Test
@@ -232,7 +232,7 @@ public class BlockingDialogsTest {
             });
             ScriptedBlockingExecutor.endRequest();
             assertEquals(List.of("answer: CONFIRM"), log);
-            assertSame(UI.getCurrent(), uiAfterPark.get(), "the block follows its dialog to the new UI");
+            assertSame(UI.getCurrent(), uiAfterPark.get(), "the UI fiber follows its dialog to the new UI");
         }
     }
 
@@ -296,7 +296,7 @@ public class BlockingDialogsTest {
                     BlockingDialogs.parkAndAwait(UI.getCurrent(), new CompletableFuture<>());
                 } catch (CancellationException e) {
                     caught.set(e);
-                    interrupted.set(Thread.interrupted());  // clears it: the block runs on the test thread
+                    interrupted.set(Thread.interrupted());  // clears it: the UI fiber runs on the test thread
                 }
             });
             ScriptedBlockingExecutor.endRequest();
@@ -331,25 +331,25 @@ public class BlockingDialogsTest {
         }
 
         @Test
-        public void parkOutsideBlockThrows() {
+        public void parkOutsideUIFiberThrows() {
             assertThrows(IllegalStateException.class,
                     () -> BlockingDialogs.parkAndAwait(UI.getCurrent(), new CompletableFuture<>()));
-            assertThrows(IllegalStateException.class, BlockingDialogs::checkUIThreadWithBlockingCapabilities);
+            assertThrows(IllegalStateException.class, BlockingDialogs::checkInUIFiber);
             final ConfirmDialog dialog = confirmDialog();
             assertThrows(IllegalStateException.class, () -> BlockingDialogs.showAndAwait(dialog));
             assertFalse(dialog.isOpened());
         }
 
         @Test
-        public void blockStartsAfterTheListenerReturns() {
-            BlockingDialogs.runLater(() -> log.add("block"));
+        public void uiFiberStartsAfterTheListenerReturns() {
+            BlockingDialogs.runLater(() -> log.add("UI fiber"));
             log.add("listener");
             ScriptedBlockingExecutor.endRequest();
-            assertEquals(List.of("listener", "block"), log);
+            assertEquals(List.of("listener", "UI fiber"), log);
         }
 
         @Test
-        public void runUntilParkReturnsOnceTheBlockParks() {
+        public void runUntilParkReturnsOnceTheUIFiberParks() {
             ScriptedBlockingExecutor.user.add(() -> _fireConfirm(_get(ConfirmDialog.class)));
             BlockingDialogs.runUntilPark(() -> log.add("answer: " + BlockingDialogs.showAndAwait(confirmDialog())));
             log.add("listener");
@@ -357,7 +357,7 @@ public class BlockingDialogsTest {
         }
 
         @Test
-        public void runLaterInsideBlockStartsAtItsPark() {
+        public void runLaterInsideUIFiberStartsAtItsPark() {
             ScriptedBlockingExecutor.user.add(() -> log.add("user answers"));
             BlockingDialogs.runLater(() -> {
                 log.add("A starts");
@@ -371,7 +371,7 @@ public class BlockingDialogsTest {
         }
 
         @Test
-        public void accessSynchronouslyInsideBlockRunsInline() {
+        public void accessSynchronouslyInsideUIFiberRunsInline() {
             ScriptedBlockingExecutor.user.add(() -> _fireReject(_get(ConfirmDialog.class)));
             BlockingDialogs.runLater(() -> {
                 final ConfirmDialogOutcome outcome = BlockingDialogs.accessSynchronously(UI.getCurrent(),
@@ -383,13 +383,13 @@ public class BlockingDialogsTest {
         }
 
         @Test
-        public void accessSynchronouslyOutsideBlockWithLockThrows() {
+        public void accessSynchronouslyOutsideUIFiberWithLockThrows() {
             assertThrows(IllegalStateException.class,
                     () -> BlockingDialogs.accessSynchronously(UI.getCurrent(), () -> "x"));
         }
 
         @Test
-        public void accessSynchronouslyFromBackgroundThreadWaitsForTheBlockParksIncluded() throws Exception {
+        public void accessSynchronouslyFromBackgroundThreadWaitsForTheUIFiberParksIncluded() throws Exception {
             final UI ui = UI.getCurrent();
             ScriptedBlockingExecutor.user.add(() -> _fireConfirm(_get(ConfirmDialog.class)));
             final AtomicReference<Object> result = new AtomicReference<>();

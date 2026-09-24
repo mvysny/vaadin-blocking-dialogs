@@ -39,14 +39,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The loom strategy under Karibu. The test thread plays the carrier: it holds the session lock, and
- * each roundtrip drains the access queue, mounting whichever blocks have a continuation queued. So
- * unlike the scripted strategy, a block really parks, and the test thread is free meanwhile.
+ * each roundtrip drains the access queue, mounting whichever UI fibers have a continuation queued. So
+ * unlike the scripted strategy, a UI fiber really parks, and the test thread is free meanwhile.
  */
 public class LoomBlockingExecutorTest {
     private static Routes routes;
 
     /**
-     * What the blocks of a test did, in order.
+     * What the UI fibers of a test did, in order.
      */
     private final List<String> log = new ArrayList<>();
 
@@ -98,7 +98,7 @@ public class LoomBlockingExecutorTest {
     }
 
     @Nested
-    public class Blocks {
+    public class UIFibers {
         @Test
         public void runInAVirtualThreadWithUIAndSessionButNoRequest() {
             final UI ui = UI.getCurrent();
@@ -118,7 +118,7 @@ public class LoomBlockingExecutorTest {
             assertSame(ui, uiSeen.get());
             assertSame(ui.getSession(), sessionSeen.get());
             assertNull(requestSeen.get(), "BlockingExecutor.runLater promises no request, under every strategy");
-            assertSame(ui, UI.getCurrent(), "the block's current instances are its own thread's");
+            assertSame(ui, UI.getCurrent(), "the UI fiber's current instances are its own thread's");
             assertEquals(List.of(), reportedErrors);
         }
 
@@ -151,7 +151,7 @@ public class LoomBlockingExecutorTest {
         }
 
         @Test
-        public void runLaterInsideABlockStartsAtItsPark() {
+        public void runLaterInsideAUIFiberStartsAtItsPark() {
             final CompletableFuture<String> answer = new CompletableFuture<>();
             BlockingDialogs.runLater(() -> {
                 log.add("A starts");
@@ -183,7 +183,7 @@ public class LoomBlockingExecutorTest {
                 }
             });
             MockVaadin.clientRoundtrip();
-            assertEquals(List.of(), log, "the block must be parked inside the synchronized block");
+            assertEquals(List.of(), log, "the UI fiber must be parked inside the synchronized block");
 
             answer.complete("resumed");
             MockVaadin.clientRoundtrip();
@@ -193,13 +193,13 @@ public class LoomBlockingExecutorTest {
     }
 
     /**
-     * No roundtrip between the call and the asserts: what the block did is there when the call
+     * No roundtrip between the call and the asserts: what the UI fiber did is there when the call
      * returns.
      */
     @Nested
     public class RunUntilPark {
         @Test
-        public void returnsOnceTheBlockParks() {
+        public void returnsOnceTheUIFiberParks() {
             final ConfirmDialog dialog = confirmDialog("Sure?");
             BlockingDialogs.runUntilPark(() -> log.add("answer: " + BlockingDialogs.showAndAwait(dialog)));
             assertTrue(dialog.isOpened());
@@ -212,30 +212,30 @@ public class LoomBlockingExecutorTest {
         }
 
         @Test
-        public void returnsOnceTheBlockEndsInAVirtualThreadOfItsOwn() {
+        public void returnsOnceTheUIFiberEndsInAVirtualThreadOfItsOwn() {
             final UI ui = UI.getCurrent();
             final AtomicReference<Thread> thread = new AtomicReference<>();
             BlockingDialogs.runUntilPark(() -> {
                 thread.set(Thread.currentThread());
-                log.add("block");
+                log.add("UI fiber");
             });
             log.add("caller");
-            assertEquals(List.of("block", "caller"), log);
+            assertEquals(List.of("UI fiber", "caller"), log);
             assertTrue(thread.get().isVirtual());
-            assertSame(ui, UI.getCurrent(), "the block's current instances are its own thread's");
+            assertSame(ui, UI.getCurrent(), "the UI fiber's current instances are its own thread's");
         }
 
         @Test
         public void runsNoAccessTaskQueuedEarlier() {
             UI.getCurrent().access(() -> log.add("earlier task"));
-            BlockingDialogs.runUntilPark(() -> log.add("block"));
-            assertEquals(List.of("block"), log);
+            BlockingDialogs.runUntilPark(() -> log.add("UI fiber"));
+            assertEquals(List.of("UI fiber"), log);
             MockVaadin.clientRoundtrip();
-            assertEquals(List.of("block", "earlier task"), log);
+            assertEquals(List.of("UI fiber", "earlier task"), log);
         }
 
         @Test
-        public void insideABlockRunsInlineParksIncluded() {
+        public void insideAUIFiberRunsInlineParksIncluded() {
             final CompletableFuture<String> answer = new CompletableFuture<>();
             BlockingDialogs.runLater(() -> {
                 log.add("A starts");
@@ -252,13 +252,13 @@ public class LoomBlockingExecutorTest {
 
         @Test
         public void exceptionsGoToTheErrorHandlerInlineToo() {
-            final RuntimeException outside = new RuntimeException("outside a block");
+            final RuntimeException outside = new RuntimeException("outside a UI fiber");
             BlockingDialogs.runUntilPark(() -> {
                 throw outside;
             });
             assertEquals(List.of(outside), reportedErrors);
 
-            final RuntimeException inside = new RuntimeException("inside a block");
+            final RuntimeException inside = new RuntimeException("inside a UI fiber");
             BlockingDialogs.runLater(() -> {
                 BlockingDialogs.runUntilPark(() -> {
                     throw inside;
@@ -272,7 +272,7 @@ public class LoomBlockingExecutorTest {
         }
 
         @Test
-        public void refusesAVirtualThreadOutsideABlock() throws InterruptedException {
+        public void refusesAVirtualThreadOutsideAUIFiber() throws InterruptedException {
             final UI ui = UI.getCurrent();
             final VaadinSession session = VaadinSession.getCurrent();
             final AtomicReference<Throwable> thrown = new AtomicReference<>();
@@ -280,7 +280,7 @@ public class LoomBlockingExecutorTest {
             try {
                 Thread.ofVirtual().start(() -> ui.accessSynchronously(() -> {
                     try {
-                        BlockingDialogs.runUntilPark(() -> log.add("block"));
+                        BlockingDialogs.runUntilPark(() -> log.add("UI fiber"));
                     } catch (Throwable t) {
                         thrown.set(t);
                     }
@@ -294,12 +294,12 @@ public class LoomBlockingExecutorTest {
     }
 
     /**
-     * The thread that completes the future is the one that queues the block's next continuation.
+     * The thread that completes the future is the one that queues the UI fiber's next continuation.
      */
     @Nested
     public class Resuming {
         @Test
-        public void byAnotherBlock() {
+        public void byAnotherUIFiber() {
             final CompletableFuture<String> answer = new CompletableFuture<>();
             BlockingDialogs.runLater(() -> log.add(BlockingDialogs.parkAndAwait(UI.getCurrent(), answer)));
             MockVaadin.clientRoundtrip();
@@ -364,7 +364,7 @@ public class LoomBlockingExecutorTest {
         @Test
         public void sessionDestroyCancelsTheWaitAtOnce() {
             final VaadinSession session = VaadinSession.getCurrent();
-            startConfirmBlock();
+            startConfirmUIFiber();
             _assertOne(ConfirmDialog.class);
 
             session.close();
@@ -379,7 +379,7 @@ public class LoomBlockingExecutorTest {
             final String first = MockBrowser.getCurrentWindowName();
             MockBrowser.newTab();
             final String second = MockBrowser.getCurrentWindowName();
-            startConfirmBlock();
+            startConfirmUIFiber();
             _assertOne(ConfirmDialog.class);
 
             MockBrowser.switchTo(first);
@@ -407,7 +407,7 @@ public class LoomBlockingExecutorTest {
 
             assertEquals(List.of("answer: CONFIRM"), log);
             assertNotSame(oldUI, UI.getCurrent());
-            assertSame(UI.getCurrent(), uiAfterPark.get(), "the block follows its dialog to the new UI");
+            assertSame(UI.getCurrent(), uiAfterPark.get(), "the UI fiber follows its dialog to the new UI");
             assertEquals(List.of(), reportedErrors);
         }
 
@@ -430,14 +430,14 @@ public class LoomBlockingExecutorTest {
             MockVaadin.clientRoundtrip();
 
             assertEquals(List.of("still here"), log);
-            assertSame(view.getUI().orElseThrow(), uiAfterPark.get(), "the block follows its anchor to the new UI");
+            assertSame(view.getUI().orElseThrow(), uiAfterPark.get(), "the UI fiber follows its anchor to the new UI");
             assertEquals(List.of(), reportedErrors);
         }
 
         /**
-         * A block in the current UI waiting on a confirm dialog, logging its {@code finally}.
+         * A UI fiber in the current UI waiting on a confirm dialog, logging its {@code finally}.
          */
-        private void startConfirmBlock() {
+        private void startConfirmUIFiber() {
             BlockingDialogs.runLater(() -> {
                 try {
                     log.add("answer: " + BlockingDialogs.showAndAwait(confirmDialog("Sure?")));

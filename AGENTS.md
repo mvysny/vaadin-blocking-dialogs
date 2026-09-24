@@ -30,7 +30,7 @@ Every fact lives in exactly one of these; the others link to it.
 
 - **Vaadin is `compileOnly` in the published modules.** A bundled Vaadin clashes with the app's own version.
 - **Every app and test serving a blocking dialog has `@Push`.** Without it the dialog never reaches the browser while the code is blocked; see `R_unlock_pushes`.
-- **Loom: HTTP requests are served by platform threads.** A continuation can't mount on a virtual one (`R_vt_scheduler`), so the block's first segment is handed off past the request, losing input exclusion (`D_input_exclusion`).
+- **Loom: HTTP requests are served by platform threads.** A continuation can't mount on a virtual one (`R_vt_scheduler`), so the UI fiber's first segment is handed off past the request, losing input exclusion (`D_input_exclusion`).
 - **Loom: every `VaadinService` routes `getSessionLock()` through `VirtualThreadAwareLock.wrap()`** — the testapp's servlet extends `LoomVaadinServlet`, Karibu tests use `MockVirtualThreadAwareServlet`. Without it a UI virtual thread taking the session lock recurses into `StackOverflowError`; see `R_vt_lock_identity`.
 - **Loom: CI's JDK 21 job passes `-Dblockingdialogs.loom.allowPinningJdk=true`**, which the root build forwards to every test JVM; without it the strategy refuses to start there (`D_loom_jdk_gate`).
 - **Loom: every JVM running it has `--add-opens java.base/java.lang=ALL-UNNAMED`** — tests, `:testapp:run`, the distribution. The scheduler reflection fails without it; see `R_vt_scheduler`.
@@ -51,6 +51,7 @@ Every fact lives in exactly one of these; the others link to it.
 - **Dependency versions live in `gradle/libs.versions.toml`**, never in a module's `build.gradle.kts`.
 - **A published module calls `configureMavenCentral("<artifactId>")`**; the artifactId is its directory name, the package `com.github.mvysny.blockingdialogs[.<strategy>]`.
 - **Every source and build file opens with the MIT header, `Copyright 2026 Martin Vysny`** — code ported from vaadin-loom included, its `Vaadin Ltd.` header replaced; copy it from `build.gradle.kts`.
+- **The unit a strategy runs is a *UI fiber*, never a "block"**, in prose and identifiers (`isInUIFiber`); the `Runnable` handed in is its `body`. See `D_ui_fiber`.
 - **Pre-1.0: break APIs freely.**
 
 ## Commands

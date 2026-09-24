@@ -28,19 +28,19 @@ a-job helper lives there too, as the example of the outcome-future pattern (`Blo
 3. **Callback vs blocking, side by side** — next to each scenario, its source in both styles (the
    blocking one ~10 lines, the callback one ~40 with nesting). The pedagogical punchline; source
    shown as static text, not reflection magic.
-4. **Awaiting something that is not a dialog** — "Import" kicks off a background job; the block
+4. **Awaiting something that is not a dialog** — "Import" kicks off a background job; the UI fiber
    shows a progress dialog and `await`s the job's future, then continues with the result. Shows
    `await` is general.
 5. **The browser stays live** — a clock / counter updated by push from a background thread keeps
    ticking while a dialog is open; a second browser tab on the same session stays usable. Proves
    the session lock really is released.
-6. **Edge cases as buttons** — navigate away with a dialog open (the block is killed, its `finally`
+6. **Edge cases as buttons** — navigate away with a dialog open (the UI fiber is killed, its `finally`
    closes the dialog, nothing reported as an error); an exception thrown after the dialog (reaches
    the session `ErrorHandler`, shown as a notification); a dialog opened inside `synchronized`
-   (works on JDK 24+; explains `R_vt_pinning` on older JDKs); nested blocks; a double-clicked Save
+   (works on JDK 24+; explains `R_vt_pinning` on older JDKs); nested UI fibers; a double-clicked Save
    whose second click finds the dialog open and is dropped (`D_input_exclusion`, both strategies).
-7. **Under the hood panel** — which thread runs the block (a virtual thread's name vs a worker's),
-   how many blocks are parked right now, session lock hold count. Makes the strategies' difference
+7. **Under the hood panel** — which thread runs the UI fiber (a virtual thread's name vs a worker's),
+   how many UI fibers are parked right now, session lock hold count. Makes the strategies' difference
    tangible, and `Q_scale_budget` in the session-unlock idea measurable.
 
 ## Open questions

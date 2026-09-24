@@ -12,7 +12,7 @@ import com.vaadin.flow.component.page.Push;
 import com.vaadin.flow.theme.lumo.Lumo;
 
 /**
- * {@code @Push} carries the dialog to the browser while the block is parked.
+ * {@code @Push} carries the dialog to the browser while the UI fiber is parked.
  */
 @Push
 @StyleSheet(Lumo.STYLESHEET)

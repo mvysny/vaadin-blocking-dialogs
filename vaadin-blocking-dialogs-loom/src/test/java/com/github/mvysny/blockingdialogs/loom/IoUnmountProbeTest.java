@@ -36,7 +36,7 @@ import static com.github.mvysny.kaributesting.v10.LocatorJ._find;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * PROBE, not a regression test: under loom, does a block that unmounts for something other than
+ * PROBE, not a regression test: under loom, does a UI fiber that unmounts for something other than
  * {@code parkAndAwait} release the session lock? The claim under test is {@code Q_io_unmount} in
  * {@code design/ideas/session-destroy-ends-bare-parks.md}.
  */
@@ -100,7 +100,7 @@ public class IoUnmountProbeTest {
     }
 
     @Test
-    public void aSocketReadLetsAnotherRequestRunBetweenTwoStatementsOfABlock() throws Exception {
+    public void aSocketReadLetsAnotherRequestRunBetweenTwoStatementsOfAUIFiber() throws Exception {
         final AtomicInteger clicks = new AtomicInteger();
         final Button other = new Button("Another request", e -> clicks.incrementAndGet());
         UI.getCurrent().add(other);
@@ -111,7 +111,7 @@ public class IoUnmountProbeTest {
                 log.add("after IO: clicks=" + clicks.get());
             });
             MockVaadin.clientRoundtrip();
-            assertEquals(List.of("before IO: clicks=0"), log, "the block is mid-read, and the carrier moved on");
+            assertEquals(List.of("before IO: clicks=0"), log, "the UI fiber is mid-read, and the carrier moved on");
 
             _click(other);   // another request of the same session
             wire.answer();
@@ -121,7 +121,7 @@ public class IoUnmountProbeTest {
     }
 
     @Test
-    public void aSleepLetsAnotherRequestRunBetweenTwoStatementsOfABlock() throws Exception {
+    public void aSleepLetsAnotherRequestRunBetweenTwoStatementsOfAUIFiber() throws Exception {
         final AtomicInteger clicks = new AtomicInteger();
         final Button other = new Button("Another request", e -> clicks.incrementAndGet());
         UI.getCurrent().add(other);
@@ -143,10 +143,10 @@ public class IoUnmountProbeTest {
 
     /**
      * Not Karibu's single test thread playing both roles: with the test thread out of the way, a
-     * real second thread takes the session lock while the block sits mid-read.
+     * real second thread takes the session lock while the UI fiber sits mid-read.
      */
     @Test
-    public void theSessionLockIsFreeWhileABlockIsMidRead() throws Exception {
+    public void theSessionLockIsFreeWhileAUIFiberIsMidRead() throws Exception {
         final VaadinSession session = VaadinSession.getCurrent();
         final AtomicBoolean otherThreadGotTheLock = new AtomicBoolean();
         try (Wire wire = new Wire()) {
@@ -174,7 +174,7 @@ public class IoUnmountProbeTest {
             } finally {
                 session.lock();
             }
-            assertTrue(otherThreadGotTheLock.get(), "another thread took the session lock while the block was mid-read");
+            assertTrue(otherThreadGotTheLock.get(), "another thread took the session lock while the UI fiber was mid-read");
             wire.answer();
             awaitLog(2);
         }
@@ -182,15 +182,15 @@ public class IoUnmountProbeTest {
     }
 
     /**
-     * The consequence for {@code D_input_exclusion}: a block doing IO before its first dialog
+     * The consequence for {@code D_input_exclusion}: a UI fiber doing IO before its first dialog
      * lets a double click in, so the blocking action runs twice.
      */
     @Test
     public void aSocketReadBeforeTheFirstDialogLetsADoubleClickIn() throws Exception {
         try (Wire wire = new Wire()) {
-            final AtomicInteger blocksStarted = new AtomicInteger();
+            final AtomicInteger uiFibersStarted = new AtomicInteger();
             final Button save = new Button("Save", e -> BlockingDialogs.runLater(() -> {
-                blocksStarted.incrementAndGet();
+                uiFibersStarted.incrementAndGet();
                 wire.read();   // "does the file exist?" against a remote store
                 final ConfirmDialog dialog = new ConfirmDialog();
                 dialog.setText("Overwrite?");
@@ -203,16 +203,16 @@ public class IoUnmountProbeTest {
             MockVaadin.clientRoundtrip();
             _click(save);   // the double click's second half
             MockVaadin.clientRoundtrip();
-            wire.answer();   // one byte wakes the first read; the second block reads the next
+            wire.answer();   // one byte wakes the first read; the second UI fiber reads the next
             wire.answer();
             final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (_find(ConfirmDialog.class).size() < blocksStarted.get() && System.nanoTime() < deadline) {
+            while (_find(ConfirmDialog.class).size() < uiFibersStarted.get() && System.nanoTime() < deadline) {
                 MockVaadin.clientRoundtrip();
                 Thread.sleep(10);
             }
-            System.out.println("PROBE double click: blocks started=" + blocksStarted.get()
+            System.out.println("PROBE double click: UI fibers started=" + uiFibersStarted.get()
                     + ", dialogs open=" + _find(ConfirmDialog.class).size());
-            assertEquals(2, blocksStarted.get(), "the second click ran the blocking listener again");
+            assertEquals(2, uiFibersStarted.get(), "the second click ran the blocking listener again");
         }
     }
 }

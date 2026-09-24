@@ -29,12 +29,13 @@ import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
 
 /**
- * The strategy-neutral half of every {@link BlockingExecutor}: what a block is, and what a park does
- * besides parking. A strategy runs each block through {@link #runBlock} on the thread that owns the
- * block, and each park through {@link #awaitAnchored}; see {@link BlockingExecutor} for the shape.
- * App code has no use for this class.
+ * The strategy-neutral half of every {@link BlockingExecutor}: what a UI fiber is, and what a park does
+ * besides parking. A strategy runs each UI fiber through {@link #runUIFiber} on the thread that owns the
+ * UI fiber, and each park through {@link #awaitAnchored}; see {@link BlockingExecutor} for the shape.
  * <p>
- * A strategy owes two things these methods rely on: a block runs on one thread for its whole life,
+ * Internal, don't use.
+ * <p>
+ * A strategy owes two things these methods rely on: a UI fiber runs on one thread for its whole life,
  * and it runs holding the session lock except inside {@link Park#park()}.
  */
 public final class StrategySupport {
@@ -42,25 +43,25 @@ public final class StrategySupport {
     private static final Logger log = LoggerFactory.getLogger(StrategySupport.class);
 
     /**
-     * Set while a block runs on this thread; {@code null} otherwise, never {@code false}.
+     * Set while a UI fiber runs on this thread; {@code null} otherwise, never {@code false}.
      */
     @NotNull
-    private static final ThreadLocal<Boolean> inBlock = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> inUIFiber = new ThreadLocal<>();
 
     private StrategySupport() {
     }
 
     /**
-     * @return whether the calling thread runs a block, and so may park.
+     * @return whether the calling thread runs a UI fiber, and so may park.
      */
-    public static boolean isInBlock() {
-        return inBlock.get() != null;
+    public static boolean isInUIFiber() {
+        return inUIFiber.get() != null;
     }
 
     /**
      * The check {@link BlockingExecutor#runLater} starts with.
      *
-     * @return {@link UI#getCurrent()}, the UI the new block runs in.
+     * @return {@link UI#getCurrent()}, the UI the new UI fiber runs in.
      * @throws IllegalStateException unless the calling thread holds the session lock with
      *                               {@link UI#getCurrent()} set.
      */
@@ -70,35 +71,35 @@ public final class StrategySupport {
         final VaadinSession session = ui == null ? null : ui.getSession();
         if (session == null || !session.hasLock()) {
             throw new IllegalStateException("runLater() needs the session lock and UI.getCurrent(), which "
-                    + Thread.currentThread() + " doesn't have. From a background thread, call access(ui, block)");
+                    + Thread.currentThread() + " doesn't have. From a background thread, call access(ui, body)");
         }
         return ui;
     }
 
     /**
-     * Runs {@code block} as a block, on the calling thread. While it runs, {@link #isInBlock()} holds,
+     * Runs {@code body} as a UI fiber, on the calling thread. While it runs, {@link #isInUIFiber()} holds,
      * and {@code ui} with its session and service are current. A {@link CancellationException}
-     * escaping the block ends it quietly; any other {@link Throwable} goes to the session's
-     * {@link ErrorHandler}, the block's UI current.
+     * escaping the UI fiber ends it quietly; any other {@link Throwable} goes to the session's
+     * {@link ErrorHandler}, the UI fiber's UI current.
      *
      * @param ui the UI {@code runLater()} was called for.
      */
-    public static void runBlock(@NotNull UI ui, @NotNull Runnable block) {
-        Objects.requireNonNull(block);
+    public static void runUIFiber(@NotNull UI ui, @NotNull Runnable body) {
+        Objects.requireNonNull(body);
         final Map<Class<?>, CurrentInstance> previous = CurrentInstance.setCurrent(ui);
-        // only a test strategy nests blocks on one thread; a real one starts each on a fresh thread
-        final Boolean wasInBlock = inBlock.get();
-        inBlock.set(Boolean.TRUE);
+        // only a test strategy nests UI fibers on one thread; a real one starts each on a fresh thread
+        final Boolean wasInUIFiber = inUIFiber.get();
+        inUIFiber.set(Boolean.TRUE);
         try {
-            block.run();
+            body.run();
         } catch (CancellationException e) {
-            log.debug("The wait of a block died, so the block ended", e);
+            log.debug("The wait of a UI fiber died, so the UI fiber ended", e);
         } catch (Throwable t) {
-            // not ui: a park may have rebound the block to its anchor's new UI
+            // not ui: a park may have rebound the UI fiber to its anchor's new UI
             handleError(t);
         } finally {
-            if (wasInBlock == null) {
-                inBlock.remove();
+            if (wasInUIFiber == null) {
+                inUIFiber.remove();
             }
             CurrentInstance.restoreInstances(previous);
         }
@@ -108,7 +109,7 @@ public final class StrategySupport {
         final VaadinSession session = VaadinSession.getCurrent();
         final ErrorHandler errorHandler = session == null ? null : session.getErrorHandler();
         if (errorHandler == null) {
-            log.error("A block failed, and there is no session ErrorHandler to report it to", t);
+            log.error("A UI fiber failed, and there is no session ErrorHandler to report it to", t);
         } else {
             errorHandler.error(new ErrorEvent(t));
         }
@@ -118,29 +119,29 @@ public final class StrategySupport {
      * The whole of {@link BlockingExecutor#accessSynchronously(UI, Supplier)}; a strategy has no reason
      * to override that.
      */
-    static <T> T accessSynchronously(@NotNull BlockingExecutor executor, @NotNull UI ui, @NotNull Supplier<T> block) {
-        Objects.requireNonNull(block);
+    static <T> T accessSynchronously(@NotNull BlockingExecutor executor, @NotNull UI ui, @NotNull Supplier<T> body) {
+        Objects.requireNonNull(body);
         final VaadinSession session = ui.getSession();
-        if (isInBlock()) {
+        if (isInUIFiber()) {
             if (session != VaadinSession.getCurrent()) {
-                throw new IllegalStateException("A block holds the lock of " + VaadinSession.getCurrent()
-                        + ", so it can't wait for a block of " + ui + " in another session");
+                throw new IllegalStateException("A UI fiber holds the lock of " + VaadinSession.getCurrent()
+                        + ", so it can't wait for a UI fiber of " + ui + " in another session");
             }
             final Map<Class<?>, CurrentInstance> previous = CurrentInstance.setCurrent(ui);
             try {
-                return block.get();
+                return body.get();
             } finally {
                 CurrentInstance.restoreInstances(previous);
             }
         }
         if (session != null && session.hasLock()) {
-            throw new IllegalStateException(Thread.currentThread() + " holds the session lock outside a block,"
-                    + " so waiting for a block would deadlock. Use runLater(block) instead");
+            throw new IllegalStateException(Thread.currentThread() + " holds the session lock outside a UI fiber,"
+                    + " so waiting for a UI fiber would deadlock. Use runLater(body) instead");
         }
         final CompletableFuture<T> result = new CompletableFuture<>();
         executor.access(ui, () -> {
             try {
-                result.complete(block.get());
+                result.complete(body.get());
             } catch (Throwable t) {
                 result.completeExceptionally(t);
             }
@@ -149,7 +150,7 @@ public final class StrategySupport {
     }
 
     /**
-     * Waits the strategy's way until the future a block is parked on is done.
+     * Waits the strategy's way until the future a UI fiber is parked on is done.
      */
     @FunctionalInterface
     public interface Park<T> {
@@ -179,7 +180,7 @@ public final class StrategySupport {
     public static <T> T awaitAnchored(@NotNull Component anchor, @NotNull CompletableFuture<T> future, @NotNull Park<T> park) {
         final UI ui = UI.getCurrent();
         if (ui == null || ui.getSession() == null) {
-            throw new IllegalStateException("No UI.getCurrent(): a block always has one");
+            throw new IllegalStateException("No UI.getCurrent(): a UI fiber always has one");
         }
         final AnchorWatch watch = new AnchorWatch(ui.getSession(), anchor.getUI().orElse(ui), future);
         final Registration onAttach = anchor.addAttachListener(watch::attached);
@@ -196,14 +197,14 @@ public final class StrategySupport {
     }
 
     /**
-     * Follows an anchor while a block waits on it, and cancels the future once the anchor stays
+     * Follows an anchor while a UI fiber waits on it, and cancels the future once the anchor stays
      * detached. The verdict waits for the request that detached it: in a {@code @PreserveOnRefresh}
      * navigation the view is detached from the old UI, the access queue drains inside
      * {@code prevUi.close()}, and only then is the view attached to the new UI. So a check queued on
      * detach that finds the anchor detached looks once more just before the response of the UI that
      * detached it; with that UI closing - a session destroy, a tab close - it cancels at once.
      * <p>
-     * Transient fields: a parked block never survives session serialization, and neither the
+     * Transient fields: a parked UI fiber never survives session serialization, and neither the
      * future nor a UI belong in the serialized component tree.
      */
     private static final class AnchorWatch implements Serializable {

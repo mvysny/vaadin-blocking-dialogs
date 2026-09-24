@@ -50,12 +50,13 @@ The loom strategy additionally needs:
 - **`--add-opens java.base/java.lang=ALL-UNNAMED`** on the JVM: the strategy reflects into the JDK
   to run virtual threads on Vaadin's UI "thread" ([JDK-8308541](https://bugs.openjdk.org/browse/JDK-8308541)).
 - **HTTP requests served by platform threads**, not virtual ones - with Vaadin Boot,
-  `new VaadinBoot().useVirtualThreadsIfAvailable(false)`. On a virtual request thread blocks still
+  `new VaadinBoot().useVirtualThreadsIfAvailable(false)`. On a virtual request thread UI fibers still
   work, but a double-clicked button may run its blocking listener twice.
 
 ## Usage
 
-Start a *block* from a listener; inside it, a dialog call returns the user's answer:
+Start a *UI fiber* from a listener - UI code that may park until the user answers, the session lock
+released meanwhile. Inside it, a dialog call returns the user's answer:
 
 ```java
 button.addClickListener(e -> BlockingDialogs.runLater(() -> {
@@ -68,23 +69,23 @@ button.addClickListener(e -> BlockingDialogs.runLater(() -> {
 }));
 ```
 
-A block ends quietly when its dialog goes away unanswered: the user navigates away, closes the tab,
+A UI fiber ends quietly when its dialog goes away unanswered: the user navigates away, closes the tab,
 or the session expires. Its `finally` blocks run on the way out.
 
 ### Beyond dialogs
 
-Underneath, a block can wait for any `CompletableFuture`, not only a dialog's answer.
+Underneath, a UI fiber can wait for any `CompletableFuture`, not only a dialog's answer.
 `BlockingDialogs.parkAndAwait(anchor, future)` parks until the future completes. The anchor is the
 component the wait belongs to, and the wait dies with it: a Save button waiting on its own progress
 bar, or a background job's result shown in a progress dialog. From a background thread,
-`BlockingDialogs.accessSynchronously(ui, block)` runs a block and waits for it, so a job can ask the
-user something halfway through. When the listener's own code after the call must see what the block
-did, `BlockingDialogs.runUntilPark(block)` returns once the block has opened its first dialog, or
+`BlockingDialogs.accessSynchronously(ui, body)` runs a UI fiber and waits for it, so a job can ask the
+user something halfway through. When the listener's own code after the call must see what the UI fiber
+did, `BlockingDialogs.runUntilPark(body)` returns once the UI fiber has opened its first dialog, or
 ended.
 
 ## Limits
 
-- **A waiting block does not survive session serialization.** A parked thread can't be serialized,
+- **A waiting UI fiber does not survive session serialization.** A parked thread can't be serialized,
   so a session with an open blocking dialog loses that dialog's wait under session persistence or
   replication.
 

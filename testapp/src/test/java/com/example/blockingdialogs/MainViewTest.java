@@ -77,7 +77,7 @@ public class MainViewTest {
     }
 
     /**
-     * The dialog detaches unanswered: the block ends quietly, reporting nothing.
+     * The dialog detaches unanswered: the UI fiber ends quietly, reporting nothing.
      */
     @Test
     public void dialogDetachedUnanswered() {

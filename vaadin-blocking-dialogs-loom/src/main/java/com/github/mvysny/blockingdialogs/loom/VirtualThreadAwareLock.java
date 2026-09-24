@@ -19,7 +19,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * The Vaadin session lock, made safe to take from a block's virtual thread. {@link LoomVaadinServlet}
+ * The Vaadin session lock, made safe to take from a UI fiber's virtual thread. {@link LoomVaadinServlet}
  * installs it; a service class of the app's own routes
  * {@link VaadinService#getSessionLock(WrappedSession)} through {@link #wrap}:
  *
@@ -29,7 +29,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * }
  * }</pre>
  *
- * A block's virtual thread already runs under the session lock - its carrier holds it for the whole
+ * A UI fiber's virtual thread already runs under the session lock - its carrier holds it for the whole
  * access task - yet it can never take that lock itself, because {@link ReentrantLock} keys on
  * {@link Thread} identity and the carrier is a different {@link Thread}. Trying anyway recurses
  * until {@link StackOverflowError}, see
@@ -108,7 +108,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
     }
 
     /**
-     * Whether the calling thread is a block's virtual thread, of any session.
+     * Whether the calling thread is a UI fiber's virtual thread, of any session.
      */
     static boolean isUIVirtualThread() {
         return pretendHold.get() != null;
@@ -130,7 +130,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
     }
 
     /**
-     * Whether the caller is a block's virtual thread of <em>this</em> lock's session.
+     * Whether the caller is a UI fiber's virtual thread of <em>this</em> lock's session.
      */
     private boolean isPretending() {
         final PretendHold hold = pretendHold.get();
@@ -183,7 +183,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
     }
 
     /**
-     * @throws IllegalStateException in pretend mode, with no pretend hold left to release. A block's
+     * @throws IllegalStateException in pretend mode, with no pretend hold left to release. A UI fiber's
      *                               virtual thread can't hand the lock back - the carrier owns it
      *                               until the thread parks or ends - and doesn't need to: parking
      *                               already releases it.
@@ -229,7 +229,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
 
     /**
      * @return {@code true} in pretend mode; this is what makes {@link VaadinSession#hasLock()} tell
-     * the truth on a block's virtual thread
+     * the truth on a UI fiber's virtual thread
      */
     @Override
     public boolean isHeldByCurrentThread() {

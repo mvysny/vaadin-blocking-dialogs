@@ -28,7 +28,7 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * The reflection hack, and which continuations reach a block's carrier. JVM-implementation-sensitive
+ * The reflection hack, and which continuations reach a UI fiber's carrier. JVM-implementation-sensitive
  * (JDK-8308541), which is why CI runs them on every JDK vendor. The carrier here is one platform
  * thread, which reproduces the property that matters: a continuation handed to it cannot run while
  * another one is mounted.
@@ -70,16 +70,16 @@ public class LoomUtilsTest {
     }
 
     @Test
-    public void threadOfVirtualInsideABlockRunsWhileTheBlockIsMounted() throws InterruptedException {
-        assertStartedThreadRunsBesideTheBlock(task -> Thread.ofVirtual().start(task));
+    public void threadOfVirtualInsideAUIFiberRunsWhileTheUIFiberIsMounted() throws InterruptedException {
+        assertStartedThreadRunsBesideTheUIFiber(task -> Thread.ofVirtual().start(task));
     }
 
     /**
      * Looks like it asks for the default scheduler, and inherits just the same.
      */
     @Test
-    public void virtualThreadPerTaskExecutorInsideABlockRunsWhileTheBlockIsMounted() throws InterruptedException {
-        assertStartedThreadRunsBesideTheBlock(task -> {
+    public void virtualThreadPerTaskExecutorInsideAUIFiberRunsWhileTheUIFiberIsMounted() throws InterruptedException {
+        assertStartedThreadRunsBesideTheUIFiber(task -> {
             final ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor();
             pool.submit(task);
             pool.shutdown();
@@ -91,50 +91,50 @@ public class LoomUtilsTest {
      */
     @Test
     public void aThreadStartedByAnInheritedThreadRunsOffTheCarrierToo() throws InterruptedException {
-        assertStartedThreadRunsBesideTheBlock(task -> Thread.ofVirtual().start(() -> Thread.ofVirtual().start(task)));
+        assertStartedThreadRunsBesideTheUIFiber(task -> Thread.ofVirtual().start(() -> Thread.ofVirtual().start(task)));
     }
 
     /**
-     * The benign case: a block resuming after a park still resumes through its carrier.
+     * The benign case: a UI fiber resuming after a park still resumes through its carrier.
      */
     @Test
-    public void aBlockUnparkedByAnotherBlockResumesThroughTheCarrier() throws InterruptedException {
+    public void aUIFiberUnparkedByAnotherUIFiberResumesThroughTheCarrier() throws InterruptedException {
         final CountDownLatch release = new CountDownLatch(1);
         final CountDownLatch resumed = new CountDownLatch(1);
-        final Thread parked = LoomUtils.newVirtualThread(carrier, "test-block-parked", () -> {
+        final Thread parked = LoomUtils.newVirtualThread(carrier, "test-ui-fiber-parked", () -> {
             await(release);
             resumed.countDown();
         });
         parked.start();
         awaitWaiting(parked);
 
-        LoomUtils.newVirtualThread(carrier, "test-block-releasing", release::countDown).start();
+        LoomUtils.newVirtualThread(carrier, "test-ui-fiber-releasing", release::countDown).start();
 
-        assertTrue(resumed.await(5, TimeUnit.SECONDS), "the parked block never resumed");
-        assertEquals(2, carrier.distinctContinuations(), "both blocks run on the carrier");
+        assertTrue(resumed.await(5, TimeUnit.SECONDS), "the parked UI fiber never resumed");
+        assertEquals(2, carrier.distinctContinuations(), "both UI fibers run on the carrier");
         assertTrue(carrier.submits() >= 3, "start, start, resume - got " + carrier.submits());
     }
 
     /**
-     * Spins inside a block, never unmounting, until {@code start} has run a task - which only
-     * happens if the started thread is scheduled somewhere other than the block's own carrier.
+     * Spins inside a UI fiber, never unmounting, until {@code start} has run a task - which only
+     * happens if the started thread is scheduled somewhere other than the UI fiber's own carrier.
      */
-    private void assertStartedThreadRunsBesideTheBlock(Consumer<Runnable> start) throws InterruptedException {
+    private void assertStartedThreadRunsBesideTheUIFiber(Consumer<Runnable> start) throws InterruptedException {
         final AtomicBoolean ran = new AtomicBoolean();
         final AtomicBoolean ranWhileMounted = new AtomicBoolean();
-        final CountDownLatch blockDone = new CountDownLatch(1);
-        LoomUtils.newVirtualThread(carrier, "test-block", () -> {
+        final CountDownLatch uiFiberDone = new CountDownLatch(1);
+        LoomUtils.newVirtualThread(carrier, "test-ui-fiber", () -> {
             start.accept(() -> ran.set(true));
             final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
             while (!ran.get() && System.nanoTime() < deadline) {
                 Thread.onSpinWait();
             }
             ranWhileMounted.set(ran.get());
-            blockDone.countDown();
+            uiFiberDone.countDown();
         }).start();
-        assertTrue(blockDone.await(10, TimeUnit.SECONDS), "the block never finished");
-        assertTrue(ranWhileMounted.get(), "the started thread was queued behind the block that started it");
-        assertEquals(1, carrier.distinctContinuations(), "only the block's own continuation may reach its carrier");
+        assertTrue(uiFiberDone.await(10, TimeUnit.SECONDS), "the UI fiber never finished");
+        assertTrue(ranWhileMounted.get(), "the started thread was queued behind the UI fiber that started it");
+        assertEquals(1, carrier.distinctContinuations(), "only the UI fiber's own continuation may reach its carrier");
     }
 
     private static void await(CountDownLatch latch) {
@@ -150,7 +150,7 @@ public class LoomUtilsTest {
         while (thread.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
             Thread.sleep(1);
         }
-        assertEquals(Thread.State.WAITING, thread.getState(), "the block never parked");
+        assertEquals(Thread.State.WAITING, thread.getState(), "the UI fiber never parked");
     }
 
     /**
