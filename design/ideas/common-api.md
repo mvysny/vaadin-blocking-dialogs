@@ -107,6 +107,18 @@ completes the future with a cancel value (`false`, `null`, an enum). So:
   both strategies. Exceptions, `CancellationException` included, go to the caller, not the
   `ErrorHandler`, as with Vaadin's own `accessSynchronously`.
 
+**Input exclusion: no other request of the session runs between `runLater` and the block's first
+park or end.** The double-clicked Save button, and any double action: Swing's "modal blocks input
+from `setVisible(true)`". Loom gives it by construction — the block's first segment runs inside the
+click request's ultimate unlock, before the lock is really released (`R_unlock_pushes`), so the second
+click finds a modal dialog open and Vaadin's server-side modality drops it. Session-unlock owes an
+implementation: its `runLater` makes the listener's request thread release its holds, wait for the
+worker's first park or end, re-take the holds and respond, so the second click queues behind the
+worker — a short, bounded wait before the response, not the endless park of
+`R_async_push_no_response`; it needs a probe. Accepted: a first segment that ends without parking
+releases the lock like any listener, and a later click then runs the listener again — ordinary Vaadin
+behaviour. The testapp's double-click scenario pins it for both strategies.
+
 **Thread-locals.** A block runs on one thread for its whole life under both strategies, so
 thread-locals it sets survive every park. What never reaches it are the listener's request-thread
 thread-locals: inside a block `UI` and `VaadinSession` are current (rebound after each park) and
@@ -155,15 +167,4 @@ the testapp as an example, since apps will style it their own way.
 
 ## Open questions
 
-- **`Q_input_exclusion`** — does the contract promise that no other request of the session is
-  handled between `runLater` and the block's first park or end? The double-clicked Save button.
-  Loom gives it by construction: the block's first segment runs inside the click request's ultimate
-  unlock, before the lock is really released (`R_unlock_pushes`), so the second click finds a modal
-  dialog open and Vaadin's server-side modality drops it. Session-unlock breaks it today
-  (`Q_modal_gap` in the session-unlock idea). Leaning yes — Swing's "modal blocks input from
-  `setVisible(true)`", and **One API, any strategy** in its commonest scenario — with session-unlock
-  owing an implementation: its `runLater` makes the listener's request thread release its holds,
-  wait for the worker's first park or end, re-take the holds and respond; the second click queues
-  behind the worker. A short, bounded wait before the response — not the endless park of
-  `R_async_push_no_response` — but it needs a probe. The testapp's double-click scenario then pins
-  it for both strategies.
+None left from the grilling; new ones go here.

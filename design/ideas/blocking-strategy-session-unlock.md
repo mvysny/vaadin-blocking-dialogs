@@ -83,11 +83,13 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   `INLINE` executor for tests (then the suite doesn't exercise the real strategy — the classic
   hazard), or a test hook that waits until the worker is parked or finished before each lookup
   (Karibu's `TestingLifecycleHook.awaitBeforeLookup` looks like the seam).
-- **`Q_modal_gap`** — the handoff opens a window loom does not have (the common API may promise it closed: `Q_input_exclusion` in `common-api.md`). The request responds *before*
-  the worker has the lock (3 ms in the probe; a non-fair lock queue under load), so for that window
-  the UI is live and the modal is not up yet: a fast second click is processed first. Under loom the
-  dialog ships in the same response as the click. Likely fix: disable the UI (or show a modality
-  curtain) at handoff, re-enable on park — new machinery loom doesn't need, to be priced in.
+- **`Q_modal_gap`** — now a requirement: the common API promises input exclusion from `runLater`
+  to the block's first park or end (`common-api.md`, "Input exclusion"). The handoff opens a window
+  loom does not have — the request responds *before* the worker has the lock (3 ms in the probe; a
+  non-fair lock queue under load), so a fast second click is processed first. Candidate fix, to
+  probe: the listener's request thread releases its holds, waits for the worker's first park or end,
+  re-takes them and responds; the second click queues behind the worker. Rejected in advance: a UI
+  curtain at handoff — new machinery that only patches the window instead of closing it.
 - **`Q_cancellation`** — mostly answered by the common API's anchor model (`common-api.md`,
   "Lifetime"): a parked worker is released because its future is cancelled when its anchor dies,
   and it unwinds through `CancellationException`; session destroy and tab close both reach it
