@@ -18,7 +18,9 @@ AutoShutdown.checkAppOver(session);
 
 The drain matters in two ways. The emulator code after `callSwing` reads state the block just
 wrote, and the epilogue must see the cascade settled. And Karibu's `_click` / `_setValue` don't
-flush the access queue, so without the drain every test reads stale state mid-cascade.
+flush the access queue; only the next lookup does (the default `awaitBeforeLookup()` runs
+`clientRoundtrip()`, Karibu 2.7.3 source). SB-Emulators' tests read emulator state without a
+lookup, so without the drain they read stale state mid-cascade.
 
 It works because under loom the block's first segment happens to be a queued `session.access`
 task (`SessionCarrier.execute`). Nothing in `BlockingExecutor` promises that. Under session-unlock
@@ -51,5 +53,8 @@ is the stronger promise: "has started, and has run up to its first park".
   SB-Emulators measured green on 2174 tests), or is only-until-first-park worth the extra signal?
 - `Q_inside_block`: inline inside a block is what SB-Emulators does (`StrategySupport.isInBlock()` →
   `body.run()`). Should the library own that branch, so callers stop needing `isInBlock`?
-- `Q_library_tests`: do this library's own Karibu tests already drain after `_click`? If they do,
-  that drain is this method's first caller.
+- `Q_library_tests`: answered — yes, though not after `_click` itself. `LoomBlockingExecutorTest`
+  mostly calls `MockVaadin.clientRoundtrip()` right after `runLater`; elsewhere (`nestedDialogs`,
+  the testapp's `MainViewTest`) the next `_get` drains through Karibu's lookup hook. That's why
+  they never needed this method. The explicit roundtrips after `runLater` are its likely first
+  callers.
