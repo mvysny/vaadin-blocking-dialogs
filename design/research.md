@@ -86,19 +86,20 @@ above and cut the fat — a marker already says where a claim came from.
   (`getLockAttributeName()` is private), created under `synchronized (VaadinService.class)`, and
   `VaadinSession.refreshLock()` asserts the instance never changes. **[src]**
 
-## R_preserve_migration — F5 on a `@PreserveOnRefresh` route moves the UI's children synchronously
+## R_preserve_migration — F5 on a `@PreserveOnRefresh` route: dialogs move at once, the view later
 
-- `AbstractNavigationStateRenderer.disconnectElements` calls `ui.getInternals().moveElementsFrom(prevUi)`,
-  then `prevUi.close()` — the new UI already exists and is registered. **[src, Vaadin 25.3.0]**
-- `UIInternalUpdater.moveToNewUI` moves every child of the old UI (dialogs, notifications): per child
-  `removeFromTree(false)` — detach listeners fire, the node's id is reset to -1 — then
-  `newUI.getElement().appendChild`, where attach listeners fire with `isInitialAttach() == true`.
-  All in one call, the session lock held throughout. **[src, Vaadin 25.3.0]**
-- When the window name is not known yet, the navigation first fetches it in a round trip
-  (`retrieveExtendedClientDetails`); until then the preserved chain stays attached to the old UI.
-  **[src, Vaadin 25.3.0]**
-- The unload beacon does not close the old UI of a preserved view. **[unverified — read from the
-  sources for SB-Emulators' session-scoped-pools decision, not re-read here]**
+- `AbstractNavigationStateRenderer.disconnectElements` removes the preserved chain's root from the
+  old UI, moves the old UI's other children to the new one (`moveElementsFrom`), then calls
+  `prevUi.close()`; the chain re-attaches later in that navigation. **[src, Vaadin 25.3.0]**
+- Each moved child (dialog, notification) is detached, then appended to the new UI in the same
+  call; its attach listeners see `isInitialAttach() == true`. **[src, Vaadin 25.3.0]**
+- With a push connection, `UI.close()` runs the pending access tasks: a `session.access` queued on
+  detach runs inside `disconnectElements`, and sees a moved dialog attached, the chain detached.
+  **[verified 2026-09-24, Vaadin 25.3.0, Karibu 2.7.3]**
+- When the window name is not known yet, the navigation first fetches it in a round trip; until
+  then the chain stays on the old UI. **[src, Vaadin 25.3.0]**
+- The unload beacon does not close the old UI of a preserved view. **[unverified — read for
+  SB-Emulators, not re-read here]**
 - Karibu 2.7.1+ reproduces this order in `MockPage.reload()` (karibu-testing#207). **[docs]**
 
 ## R_session_destroy_detaches — session destroy detaches every UI's tree

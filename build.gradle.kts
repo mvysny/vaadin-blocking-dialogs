@@ -66,6 +66,9 @@ subprojects {
 
         tasks.withType<Javadoc> {
             isFailOnError = false
+            // the JDK's own tags, which javadoc doesn't know without being told
+            (options as StandardJavadocDocletOptions).tags(
+                "apiNote:a:API Note:", "implSpec:a:Implementation Requirements:", "implNote:a:Implementation Note:")
         }
 
         tasks.withType<JavaCompile> {

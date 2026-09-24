@@ -11,9 +11,11 @@ plugins {
 dependencies {
     // Java has no nullable types
     api(libs.jetbrains.annotations)
+    implementation(libs.slf4j.api)
 
     // the app brings its own Vaadin
     compileOnly(libs.vaadin.core)
+    compileOnly(libs.jakarta.servlet)
 
     testImplementation(libs.vaadin.core)
     testImplementation(libs.karibu.testing)

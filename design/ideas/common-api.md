@@ -40,7 +40,10 @@ public interface BlockingExecutor {
 }
 ```
 
-The app may also instantiate a strategy's executor directly; `get()` is the zero-wiring path.
+`get()` is the only way to the strategy: no manual instantiation, no setter. A setter would be global
+mutable state that apps take up as a wiring API, and then "exactly one, via SPI" stops being true; tests
+get their strategy the same way, from a `META-INF/services` file in test resources. A strategy that
+needs configuration (`Q_worker_pool`) reads it itself, as SPI providers do.
 
 **Call site: the static facade `BlockingDialogs`.** `BlockingExecutor` is the SPI a strategy
 implements; app code calls the final class `BlockingDialogs` — the same methods as statics, plus the
@@ -52,11 +55,10 @@ button.addClickListener(e -> BlockingDialogs.runLater(() -> {
 }));
 ```
 
-Routing: `runLater` and `access` go through `BlockingExecutor.get()` — they are called outside any
-block. `parkAndAwait`, `showAndAwait` and `accessSynchronously`-from-inside-a-block use **the calling
-block's own executor**, found through the thread-local set when the block starts (the one
-`checkUIThreadWithBlockingCapabilities()` reads). So a manually instantiated executor works with
-every helper, and nothing inside a block depends on the SPI.
+Routing: every facade call goes through `BlockingExecutor.get()` — one strategy per app, so nothing
+routes by executor. What a block does need is "may this thread park?", so `parkAndAwait` throws on a
+request thread instead of deadlocking: a boolean thread-local set while a block runs, which the
+default `checkUIThreadWithBlockingCapabilities()` reads.
 
 **Strategy selection: SPI, exactly one.** `get()` finds the strategy through `ServiceLoader` and
 throws when there is none or more than one. Hence one demo app per strategy (`testapp.md`). `get()`
@@ -69,20 +71,29 @@ the "none / more than one" failure is cached too, so it throws the same way on e
 No executor scope — no per-UI, per-session or per-tab registry, nothing that kills parked threads
 from outside:
 
-- `parkAndAwait(anchor, future)` watches the anchor. On detach it does not decide at once; it queues
-  `session.access(() -> { if (!anchor.isAttached()) future.cancel(false); })`. Access tasks run on
-  the ultimate unlock, after the current request is fully handled.
-- **F5 with `@PreserveOnRefresh` is a synchronous migration** — detach from the old UI, attach to
-  the new one, in one call under the lock (`R_preserve_migration`). So by the time the queued check
-  runs, a migrated anchor is attached again, a dead one is not. Source-read only; a Karibu test pins
-  it at implementation.
+- `parkAndAwait(anchor, future)` watches the anchor. On detach it does not decide at once: it notes
+  the UI current at detach and queues a `session.access` check. Anchor attached again: nothing. That
+  UI closing or gone: cancel. Otherwise look once more in that UI's `beforeClientResponse`, and cancel
+  if still detached — with `@Push`, the push at the same ultimate unlock (`R_unlock_pushes`).
+- **Why two steps: F5 with `@PreserveOnRefresh`.** A migrated dialog is attached to the new UI by the
+  time the queued check runs, but the preserved route chain is not: `prevUi.close()` drains the
+  access queue in between (`R_preserve_migration`). The navigation runs on the new UI, so the view's
+  detach notes the new UI, and its response finds the view attached. Karibu pins both.
+  Rejected: a `VaadinRequestInterceptor.requestEnd` hook — a `VaadinServiceInitListener` shipped in
+  our jar, and still a fallback for destroys outside a request.
 - **Resume UI:** after waking, the block's `UI.getCurrent()` / `VaadinSession.getCurrent()` are
-  rebound to `anchor.getUI()`, which follows a migration by construction. No window-name lookup.
+  rebound to the UI the anchor was last attached to, tracked by an attach listener — it follows a
+  migration, and survives a dialog removed from the UI once answered, where `anchor.getUI()` is
+  empty. No window-name lookup.
 - No anchorless overload: a wait that names no owner can only leak.
 - **Session destroy and tab close need no backstop:** both detach the anchor, and the check queued
-  from our detach listener runs in the same access-queue drain (`R_session_destroy_detaches`). Only
-  the timing of a tab close varies — a closed `@PreserveOnRefresh` tab waits for heartbeat expiry
-  (`R_preserve_migration`). Free under loom; under session-unlock a worker is held that long.
+  from our detach listener runs in the same access-queue drain (`R_session_destroy_detaches`). A
+  destroy detaches each tree inside that UI's own `accessSynchronously`, after `ui.close()`, so the
+  noted UI is closing and the check cancels at once. A tab reaped while another tab's request runs
+  defers to that tab's next response. Only the timing of a tab close varies — a closed
+  `@PreserveOnRefresh` tab waits for heartbeat expiry (`R_preserve_migration`). Free under loom;
+  under session-unlock a worker is held that long. The loom tests owe the destroy and tab-close
+  cases (below, "Testing the API alone").
 
 **Cancellation means "the wait is dead", only.** A user-facing Cancel is an *answer*: the dialog
 completes the future with a cancel value (`false`, `null`, an enum). So:
@@ -167,7 +178,9 @@ Component`, not `Dialog`; `Dialog`, `ConfirmDialog`, `Notification` each declare
 - `showAndAwait(ConfirmDialog dialog): ConfirmDialogOutcome` — the app configures the dialog fully
   (texts, which buttons, themes, custom button components); the library adds three listeners mapping
   `ConfirmEvent` / `RejectEvent` / `CancelEvent` (Cancel button *or* Escape) onto the enum
-  `CONFIRM` / `REJECT` / `CANCEL` and awaits. An enum rather than the event object: the events are
+  `CONFIRM` / `REJECT` / `CANCEL` and awaits. A fourth, `ClosedEvent`, also maps to `CANCEL`: Flow
+  sends no `CancelEvent` while the Cancel button is hidden, and a dialog closed unanswered would
+  otherwise detach and end the block silently. An enum rather than the event object: the events are
   not a sealed hierarchy, so a `switch` over them loses exhaustiveness. Server-side there is no
   `Button` to return — the default buttons are declared by text.
 
@@ -176,6 +189,20 @@ helper would replicate `ConfirmDialog`'s API. A dialog with a fourth button, or 
 is the app's own two lines around `parkAndAwait`. The progress-dialog-around-a-job helper lives in
 the testapp as an example, since apps will style it their own way.
 
+**Where the shared half lives: `StrategySupport`**, a final class of statics a strategy calls —
+`runBlock(ui, block)` on the block's thread (the in-block flag, the current instances, the exception
+rule) and `awaitAnchored(anchor, future, park)` around its park (the anchor watch, unwrapping, the
+resume UI). Not a base class (COP rule 2), not SPI defaults (app code would see them on `get()`).
+
+**Testing the API alone: a scripted strategy.** The API module's tests register
+`ScriptedBlockingExecutor` through a test `META-INF/services` file: a block runs from `ui.access()` on
+Karibu's test thread, and a park plays the browser — ends the request, runs the next scripted user
+action, ends that request — instead of parking. It runs `StrategySupport` exactly as the real
+strategies will, so everything but the park itself is covered there. It can't play what Vaadin
+forbids from inside an access task — a session destroy trips `verifyNoOtherSessionLocked`. Those go
+to the loom tests, where the block's virtual thread parks and the test thread is free: session
+destroy, tab close, F5.
+
 ## Open questions
 
-None left from the grilling; new ones go here.
+None open; new ones go here.
