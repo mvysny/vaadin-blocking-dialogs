@@ -59,7 +59,11 @@ block's own executor**, found through the thread-local set when the block starts
 every helper, and nothing inside a block depends on the SPI.
 
 **Strategy selection: SPI, exactly one.** `get()` finds the strategy through `ServiceLoader` and
-throws when there is none or more than one. Hence one demo app per strategy (`testapp.md`).
+throws when there is none or more than one. Hence one demo app per strategy (`testapp.md`). `get()`
+caches its answer (a lazy holder): a `ServiceLoader` instance caches the providers it instantiated,
+but every `ServiceLoader.load(...)` is a new loader that re-scans `META-INF/services`, and `get()` sits
+on the hot path of every `runLater`. A strategy is stateless app-wide, so one per classloader is right;
+the "none / more than one" failure is cached too, so it throws the same way on every call.
 
 **Lifetime: a block lives as long as the future it is parked on; the future as long as its anchor.**
 No executor scope — no per-UI, per-session or per-tab registry, nothing that kills parked threads
@@ -118,6 +122,13 @@ worker — a short, bounded wait before the response, not the endless park of
 `R_async_push_no_response`; it needs a probe. Accepted: a first segment that ends without parking
 releases the lock like any listener, and a later click then runs the listener again — ordinary Vaadin
 behaviour. The testapp's double-click scenario pins it for both strategies.
+
+**Serialization: a parked block does not survive it, period.** A parked thread cannot be
+serialized, so a session with an open blocking wait does not survive session persistence or
+replication; after deserialization the wait is gone. The README states it as a limit. The anchor's
+detach listener is the one thing of ours in the component tree; it must not drag a
+`CompletableFuture` or a thread into the session's serialized form (`transient`, or a listener that
+tolerates a null future after deserialization).
 
 **Thread-locals.** A block runs on one thread for its whole life under both strategies, so
 thread-locals it sets survive every park. What never reaches it are the listener's request-thread
