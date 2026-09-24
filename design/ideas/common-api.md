@@ -68,25 +68,17 @@ from outside:
 - `parkAndAwait(anchor, future)` watches the anchor. On detach it does not decide at once; it queues
   `session.access(() -> { if (!anchor.isAttached()) future.cancel(false); })`. Access tasks run on
   the ultimate unlock, after the current request is fully handled.
-- **F5 with `@PreserveOnRefresh` is a synchronous migration.** `AbstractNavigationStateRenderer
-  .disconnectElements` → `UIInternals.moveElementsFrom(prevUi)` → `UIInternalUpdater.moveToNewUI`,
-  which per UI child does `removeFromTree(false)` (detach listeners fire; the node's id is reset to
-  -1) then `newUI.getElement().appendChild` (attach listeners fire, `isInitialAttach() == true`);
-  then `prevUi.close()`. All in one call, lock held. So by the time the queued check runs, a migrated
-  anchor is attached again, a dead one is not. (Read in the Flow 25.3.0 sources; not yet run —
-  Karibu 2.7.1+ reproduces this order, so a test can pin it.) When Flow first needs the window name
-  it defers the navigation a round trip; the anchor just stays attached to the old UI meanwhile.
+- **F5 with `@PreserveOnRefresh` is a synchronous migration** — detach from the old UI, attach to
+  the new one, in one call under the lock (`R_preserve_migration`). So by the time the queued check
+  runs, a migrated anchor is attached again, a dead one is not. Source-read only; a Karibu test pins
+  it at implementation.
 - **Resume UI:** after waking, the block's `UI.getCurrent()` / `VaadinSession.getCurrent()` are
   rebound to `anchor.getUI()`, which follows a migration by construction. No window-name lookup.
 - No anchorless overload: a wait that names no owner can only leak.
-- **Session destroy and tab close need no backstop** (Flow 25.3.0 sources): `VaadinService
-  .fireSessionDestroy` runs as a `session.access` task that `ui.close()`s then `session.removeUI(ui)`s
-  every UI → `UIInternals.setSession(null)` → the UI root node's `setParent(null)` → detach listeners
-  fire for the whole tree. The check queued from our detach listener lands in the pending queue that
-  `runPendingAccessTasks`' poll loop is draining, so it runs in the same pass. A closed tab takes the
-  same `removeUI` path via `removeClosedUIs`; only the timing varies — the unload beacon closes at
-  once, except for `@PreserveOnRefresh` views, where Flow skips it and heartbeat expiry (default
-  3 × 5 min) closes the UI. Free under loom; under session-unlock a worker is held that long.
+- **Session destroy and tab close need no backstop:** both detach the anchor, and the check queued
+  from our detach listener runs in the same access-queue drain (`R_session_destroy_detaches`). Only
+  the timing of a tab close varies — a closed `@PreserveOnRefresh` tab waits for heartbeat expiry
+  (`R_preserve_migration`). Free under loom; under session-unlock a worker is held that long.
 
 **Cancellation means "the wait is dead", only.** A user-facing Cancel is an *answer*: the dialog
 completes the future with a cancel value (`false`, `null`, an enum). So:
@@ -163,3 +155,15 @@ the testapp as an example, since apps will style it their own way.
 
 ## Open questions
 
+- **`Q_input_exclusion`** — does the contract promise that no other request of the session is
+  handled between `runLater` and the block's first park or end? The double-clicked Save button.
+  Loom gives it by construction: the block's first segment runs inside the click request's ultimate
+  unlock, before the lock is really released (`R_unlock_pushes`), so the second click finds a modal
+  dialog open and Vaadin's server-side modality drops it. Session-unlock breaks it today
+  (`Q_modal_gap` in the session-unlock idea). Leaning yes — Swing's "modal blocks input from
+  `setVisible(true)`", and **One API, any strategy** in its commonest scenario — with session-unlock
+  owing an implementation: its `runLater` makes the listener's request thread release its holds,
+  wait for the worker's first park or end, re-take the holds and respond; the second click queues
+  behind the worker. A short, bounded wait before the response — not the endless park of
+  `R_async_push_no_response` — but it needs a probe. The testapp's double-click scenario then pins
+  it for both strategies.

@@ -83,7 +83,7 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   `INLINE` executor for tests (then the suite doesn't exercise the real strategy — the classic
   hazard), or a test hook that waits until the worker is parked or finished before each lookup
   (Karibu's `TestingLifecycleHook.awaitBeforeLookup` looks like the seam).
-- **`Q_modal_gap`** — the handoff opens a window loom does not have. The request responds *before*
+- **`Q_modal_gap`** — the handoff opens a window loom does not have (the common API may promise it closed: `Q_input_exclusion` in `common-api.md`). The request responds *before*
   the worker has the lock (3 ms in the probe; a non-fair lock queue under load), so for that window
   the UI is live and the modal is not up yet: a fast second click is processed first. Under loom the
   dialog ships in the same response as the click. Likely fix: disable the UI (or show a modality

@@ -25,6 +25,9 @@ above and cut the fat — a marker already says where a claim came from.
 - Calling `ui.push()` just before `await()` makes up for it (the lock is still held there, and
   `push()` drains the access queue itself). **[unverified]**
 - Without `@Push` nothing is pushed; the changes wait for the client's next request. **[src]**
+- The pending tasks and the push both run *before* `getLockInstance().unlock()` really releases
+  the lock, so a request queued on the lock sees their effects — an `access` task that opens a modal
+  dialog has it open before the next request is handled. **[src, Vaadin 25.3.0]**
 
 ## R_async_push_no_response — Flow's client: an async push never ends a request
 
@@ -82,3 +85,28 @@ above and cut the fat — a marker already says where a claim came from.
 - The session lock is stored under the attribute `getServiceName() + ".lock"`
   (`getLockAttributeName()` is private), created under `synchronized (VaadinService.class)`, and
   `VaadinSession.refreshLock()` asserts the instance never changes. **[src]**
+
+## R_preserve_migration — F5 on a `@PreserveOnRefresh` route moves the UI's children synchronously
+
+- `AbstractNavigationStateRenderer.disconnectElements` calls `ui.getInternals().moveElementsFrom(prevUi)`,
+  then `prevUi.close()` — the new UI already exists and is registered. **[src, Vaadin 25.3.0]**
+- `UIInternalUpdater.moveToNewUI` moves every child of the old UI (dialogs, notifications): per child
+  `removeFromTree(false)` — detach listeners fire, the node's id is reset to -1 — then
+  `newUI.getElement().appendChild`, where attach listeners fire with `isInitialAttach() == true`.
+  All in one call, the session lock held throughout. **[src, Vaadin 25.3.0]**
+- When the window name is not known yet, the navigation first fetches it in a round trip
+  (`retrieveExtendedClientDetails`); until then the preserved chain stays attached to the old UI.
+  **[src, Vaadin 25.3.0]**
+- The unload beacon does not close the old UI of a preserved view. **[unverified — read from the
+  sources for SB-Emulators' session-scoped-pools decision, not re-read here]**
+- Karibu 2.7.1+ reproduces this order in `MockPage.reload()` (karibu-testing#207). **[docs]**
+
+## R_session_destroy_detaches — session destroy detaches every UI's tree
+
+- `VaadinService.fireSessionDestroy` runs as a `session.access` task: per UI `ui.close()`, then
+  `session.removeUI(ui)` → `UIInternals.setSession(null)` → the UI root node's `setParent(null)`, so
+  detach listeners fire for the whole tree; then the destroy listeners. **[src, Vaadin 25.3.0]**
+- A `session.access` queued from such a detach listener runs in the same pass:
+  `runPendingAccessTasks` polls the queue until it is empty. **[src, Vaadin 25.3.0]**
+- A closed tab reaches `removeUI` too, via `removeClosedUIs` — at once on the unload beacon,
+  otherwise after the missed-heartbeat timeout (3 × the 5-minute default interval). **[docs]**
