@@ -88,12 +88,14 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   the UI is live and the modal is not up yet: a fast second click is processed first. Under loom the
   dialog ships in the same response as the click. Likely fix: disable the UI (or show a modality
   curtain) at handoff, re-enable on park — new machinery loom doesn't need, to be priced in.
-- **`Q_cancellation`** — a parked worker whose UI detaches or session expires must be released. A
-  leaked platform thread costs far more than a leaked virtual thread, so this is a requirement. What
-  does the block see — an exception out of await? Same answer as loom's `close()`, per the common API.
+- **`Q_cancellation`** — mostly answered by the common API's anchor model (`common-api.md`,
+  "Lifetime"): a parked worker is released because its future is cancelled when its anchor dies,
+  and it unwinds through `CancellationException`; session destroy and tab close both reach it
+  (`common-api.md`). Left for this strategy: a closed `@PreserveOnRefresh` tab is only noticed at
+  heartbeat expiry (default ~15 min), and its worker is held until then — price it in `Q_scale_budget`.
 - **`Q_stale_after_relock`** — while unlocked, other requests mutate the UI freely; the UI may
-  detach, the session may invalidate. On re-lock, re-validate `ui.isAttached()` and re-establish the
-  `CurrentInstance`s. Loom has the same exposure, so this is shared work, not new risk.
+  detach, the session may invalidate. On re-lock, rebind the `CurrentInstance`s to
+  `anchor.getUI()` (`common-api.md`, "Lifetime") — shared with loom, not new risk.
 - **`Q_reentrancy`** — nested dialogs, and a block started from inside a block. Hold-count
   bookkeeping must survive N levels; *Await Lock* dissolves it. The probe only did one level.
 - **`Q_worker_pool`** — who owns the pool: one per session, per UI, or app-wide? Bounded? What

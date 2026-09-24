@@ -9,13 +9,15 @@ line and the README's "Running the demo".
 
 ## Frame
 
-An `AppLayout` with a `SideNav`: one route per strategy — `loom`, `session-unlock` (a placeholder
-until that module exists: a paragraph saying so, linking the idea file). The two routes should be
-**the same demo component, differing only in the executor they were handed** — that is
-**One API, any strategy** made visible, and it stops the demos drifting apart. Per COP: a
-`BlockingDemo extends VerticalLayout` taking a strategy (`Function<UI, BlockingExecutor>` or
-whatever `Q_strategy_selection` in `common-api.md` settles on), each route a two-line subclass or a
-wrapper passing its factory in.
+**One demo app per strategy** — `testapp-loom`, and `testapp-session-unlock` once that module
+exists — because the strategy is found through the SPI and more than one on the classpath is an
+error (`common-api.md`). Each is an `AppLayout` with a `SideNav`, one route per scenario. The two apps
+should run **the same demo components, differing only in the strategy jar on their classpath** —
+that is **One API, any strategy** made visible, and it stops the demos drifting apart. So the demo
+components live in a shared, unpublished module (`testapp-common`?) that depends only on
+`vaadin-blocking-dialogs`; each app is `Main` + its strategy dependency. The progress-dialog-around-
+a-job helper lives there too, as the example of Q6's outcome-future pattern (`common-api.md`,
+"Cancellation").
 
 ## Scenario candidates
 
@@ -45,9 +47,8 @@ wrapper passing its factory in.
 
 - **`Q_scenario_pick`** — which of the above make the cut? Leaning 1 + 2 as the main demo, 5 as an
   always-on header, 6 as a "torture" tab, 3 inline; 4 and 7 if cheap.
-- **`Q_one_route_per_strategy`** — routes per strategy (as asked), or one route with a strategy
-  switch? Separate routes keep each strategy's executor lifecycle honest; a switch makes comparison
-  instant. Routes first.
+- **`Q_shared_demo_module`** — a `testapp-common` module holding the demo components, or duplicate
+  them per app? A module keeps the apps honest (they can't diverge); duplication is one module fewer.
 - **`Q_live_demo`** — host it (v-herd, like vaadin-loom)? Then the Docker image needs JDK 24+ and the
   `--add-opens`, and production mode must work in CI.
 - **`Q_browser_tests`** — Karibu can't see `Q_modal_gap` or the loading indicator, which are the
