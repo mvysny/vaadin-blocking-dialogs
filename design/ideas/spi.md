@@ -22,14 +22,19 @@ app ──► vaadin-blocking-dialogs ──► vaadin-fibers-spi ◄── vaad
 
 **Where the brainstorm stands** (paused 2026-09-24):
 
-- Settled: the three-layer split above; the strategy owns `park()`, so it can fiddle with the
-  locks; the SPI is `runUntilFirstPark` + a strategy-owned `Completable` (sketch below); the
-  contract is strict — no UIDL and no other request until the first park, the fiber continuing
-  elsewhere afterwards; a fiber holds the session lock everywhere except inside `park()` — loom
-  breaks that at IO unmounts and is accepted as "slightly broken" until fixed; `complete()` / `fail()` run under the session lock, the API bridging
-  lock-less callers through `session.access`; Hacky is rejected.
+- Settled:
+  - the three-layer split above; the strategy owns `park()`, so it can fiddle with the locks;
+  - the SPI is `runUntilFirstPark(session, fiber)` + a strategy-owned `Completable` (sketch below);
+  - the contract is strict — no UIDL and no other request until the first park, the fiber
+    continuing elsewhere afterwards;
+  - **every `Completable.park()` releases the session lock, nothing else does**; the "first park"
+    is the first `Completable.park()`. Loom breaks it at IO unmounts and is accepted as "slightly
+    broken" until it holds the lock across them (`Q_lock_between_parks`);
+  - `complete()` / `fail()` run under the session lock, the API bridging lock-less callers
+    through `session.access`;
+  - `runUntilFirstPark` takes no `Completable` (`Q_completable_param`); Hacky is rejected.
 - Postponed by Martin: the probe of the raw-lock release for background threads.
-- Next: `Q_completable_param`, then the names.
+- Next: the names.
 
 Graduates when the modules land: the founding reasoning to a `D_` (it rewrites
 `D_pluggable_strategy`'s cost paragraph and `D_spi_exactly_one`), the layering to the AGENTS.md
@@ -173,10 +178,7 @@ interface Completable<R> {
   failed: add `fail(Throwable)`, and let `park()` throw like `Future.get()` —
   `ExecutionException` around the cause, `InterruptedException` — which the API already unwraps
   into the `parkAndAwait` contract.
-- **Drop `runUntilFirstPark`'s `Completable` parameter** — or say what it is for
-  (`Q_completable_param`). If it signals the fiber's end, the API can do that by wrapping the
-  runnable; if it is the completable of the first park, the strategy can't rely on the first park
-  being on it.
+- **Drop `runUntilFirstPark`'s `Completable` parameter** — settled, see `Q_completable_param`.
 - **Pass the `VaadinSession`, explicitly.** Implementors *do* know Vaadin, and must: loom queues
   continuations with `session.access` and needs its servlet's lock wrapper; background threads
   need `session.getLockInstance()`, and `VaadinSession.unlock()` for the pushing release. A
@@ -193,7 +195,9 @@ public interface UIFiberStrategy {                       // Q_spi_name
      * Called holding the lock of session, outside any fiber. Between the call and its return
      * nothing reaches the browser, and no other request runs. A fiber that parked continues
      * elsewhere once woken - on the strategy's own thread, never on the caller's. A fiber holds
-     * the session lock everywhere except inside Completable.park().
+     * the session lock everywhere except inside Completable.park(): a strategy holds it across
+     * every other park - IO, a bare future.get() - and the "first park" is the first
+     * Completable.park().
      */
     void runUntilFirstPark(VaadinSession session, Runnable fiber);
 
@@ -264,15 +268,34 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
     push then runs after the worker's first park, not before: check that is the push we want.
 - **`Q_lock_between_parks`** — settled: the SPI promises the fiber holds the lock everywhere
   except inside `park()`. Loom breaks it at every IO unmount (`R_vt_unmount_releases_lock`); for
-  now loom is accepted as "slightly broken", and the fix is
-  `loom-holds-the-lock-across-bare-unmounts.md` or something like it. The loom module's docs say so
-  until then.
+  now loom is accepted as "slightly broken". The fix is the rule of `Q_completable_param` — every
+  `Completable.park()` releases, nothing else does — implemented as
+  `loom-holds-the-lock-across-bare-unmounts.md` sketches it. The loom module's docs say so until then.
 - **`Q_wrapping`** — the API wraps the body before handing it over, so the wrapper runs on the
   fiber's thread. Anything the wrapper must do on the *caller's* thread first (capturing the UI,
   `checkLockedUI`) happens in the API before `runUntilFirstPark`; confirm nothing in `runUIFiber` or
   `awaitAnchored` needs strategy internals.
-- **`Q_completable_param`** — what `runUntilFirstPark`'s `Completable` parameter in Martin's cut
-  is for; dropped in the sketch until it has a job.
+- **`Q_completable_param`** — settled: dropped. Martin's reason for the parameter: it marks the one `Completable`
+  whose `park()` releases the UI lock. Loom, seeing the virtual thread park on anything else (IO, a
+  bare `future.get()`), keeps the lock and waits, carrying on until *that* `park()` is called — the
+  fix for "slightly broken" (`Q_lock_between_parks`), and `loom-holds-the-lock-across-bare-unmounts.md`
+  in SPI form: its `releasing` flag, set right before the strategy's own `get()`.
+  - **The rule is right; the parameter is not needed for it.** The strategy implements
+    `Completable.park()` itself, so it already knows a releasing park from a bare one: *every*
+    `Completable.park()` releases, and nothing else does. Loom sets `releasing` inside its own
+    `park()`; background threads release only there anyway.
+  - **One designated instance would be too few.** A fiber parks many times on different
+    completables — a confirm, then a second dialog, then a progress wait — each made by the API as
+    the fiber goes. If only the passed-in one released, the second dialog's park would hold the
+    lock, and its answering click could never get in: a deadlock.
+  - **It also defines "first park"**: `runUntilFirstPark` returns at the first `Completable.park()`,
+    never at IO — which fixes `RunUntilParkProbeTest.ioBeforeTheFirstDialog` for free.
+  - **The price, on both strategies alike**: a bare park waiting for a UI answer (the migrator's
+    `latch.await()`, `session-destroy-ends-bare-parks.md`) now freezes the session instead of
+    working by accident under loom. Loud and consistent — **One API, any strategy** — but worth a
+    WARN after N seconds with the fiber's stack (`Q_timeout_backstop` in the loom-holds idea).
+  - Settled with Martin: the parameter is dropped, and the rule goes into the SPI javadoc —
+    "every `Completable.park()` releases the lock, nothing else does".
 - **`Q_epilogue_hook`** — should SB-Emulators reconcile in `ui.beforeClientResponse(...)` instead
   of after the listener? It then holds for every UIDL, pushes included, whatever the strategy.
   Does the API offer a "before every park" hook for it, or is Vaadin's own hook enough?
