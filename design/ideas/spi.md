@@ -26,9 +26,10 @@ app ──► vaadin-blocking-dialogs ──► vaadin-fibers-spi ◄── vaad
   locks; the SPI is `runUntilFirstPark` + a strategy-owned `Completable` (sketch below); the
   contract is strict — no UIDL and no other request until the first park, the fiber continuing
   elsewhere afterwards; a fiber holds the session lock everywhere except inside `park()` — loom
-  breaks that at IO unmounts and is accepted as "slightly broken" until fixed; Hacky is rejected.
+  breaks that at IO unmounts and is accepted as "slightly broken" until fixed; `complete()` / `fail()` run under the session lock, the API bridging
+  lock-less callers through `session.access`; Hacky is rejected.
 - Postponed by Martin: the probe of the raw-lock release for background threads.
-- Next: `Q_complete_threading`, `Q_completable_param`, then the names.
+- Next: `Q_completable_param`, then the names.
 
 Graduates when the modules land: the founding reasoning to a `D_` (it rewrites
 `D_pluggable_strategy`'s cost paragraph and `D_spi_exactly_one`), the layering to the AGENTS.md
@@ -275,10 +276,14 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
 - **`Q_epilogue_hook`** — should SB-Emulators reconcile in `ui.beforeClientResponse(...)` instead
   of after the listener? It then holds for every UIDL, pushes included, whatever the strategy.
   Does the API offer a "before every park" hook for it, or is Vaadin's own hook enough?
-- **`Q_complete_threading`** — `complete()` / `fail()` only under the session lock, the API
-  bridging a background job's completion through `session.access`? The `Condition` needs it; loom
-  wouldn't care. The lock also orders the wake-up: the fiber resumes only after the completing
-  request lets go.
+- **`Q_complete_threading`** — settled: the SPI's `complete()` / `fail()` are called holding the
+  session lock. Swing tolerates closing a blocking dialog from a background thread — against the
+  rules, but it works (a worker disposing its progress modal) — so under SB-Emulators `complete()`
+  does get called lock-less. The API detects that (`!session.hasLock()`) and routes the call
+  through `session.access` — SB-Emulators does the same today, per Martin. `session`, not `ui`: the
+  fiber may have followed its anchor to a new UI, leaving the old one detached. The `Condition`
+  needs the lock; loom wouldn't care; and the lock orders the wake-up: the fiber resumes only after
+  the completing thread lets go.
 - **`Q_future_cancel`** — the anchor dies: today the app's future is cancelled
   (`D_anchored_wait`). With a `Completable`, the API fails it; does it still cancel the app's
   future too, so a background job sees the wait is gone?
