@@ -32,12 +32,15 @@ app ──► vaadin-blocking-dialogs ──► vaadin-fibers-spi ◄── vaad
     broken" until it holds the lock across them (`Q_lock_between_parks`);
   - `complete()` / `fail()` run under the session lock, the API bridging lock-less callers
     through `session.access`;
+  - only the API calls `fail()`: the anchor's death (`CancellationException`, and the app's future
+    is cancelled too — `Q_future_cancel`) and the app's future failing; a user's Cancel is an answer;
   - `runUntilFirstPark` takes no `Completable` (`Q_completable_param`); Hacky is rejected;
   - the SPI type is `UIFiberRunnerSpi`, its implementations `LoomUIFiberRunner` and the like
     (`Q_spi_name`).
 - Postponed by Martin: the probe of the raw-lock release for background threads.
-- Next: the module names (`Q_module_names`), the app-facing class name, and the prose rename
-  "strategy" → "runner".
+- Next, the two that shape the SPI contract: `Q_settle_woken`, `Q_nested_run_later`. Then
+  `Q_run_later_derived`, `Q_wrapping`, `Q_epilogue_hook`; the module names (`Q_module_names`), the
+  app-facing class name, and the prose rename "strategy" → "runner".
 
 Graduates when the modules land: the founding reasoning to a `D_` (it rewrites
 `D_pluggable_strategy`'s cost paragraph and `D_spi_exactly_one`), the layering to the AGENTS.md
@@ -318,6 +321,19 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
     WARN after N seconds with the fiber's stack (`Q_timeout_backstop` in the loom-holds idea).
   - Settled with Martin: the parameter is dropped, and the rule goes into the SPI javadoc —
     "every `Completable.park()` releases the lock, nothing else does".
+- **`Q_settle_woken`** — does `runUntilFirstPark` also settle the fibers woken during it
+  (`run-until-park-settles-woken-ui-fibers.md`: SB-Emulators' 40 modal-resume tests need it)? The
+  strategy-owned `Completable` fits: a `complete()` made inside a `runUntilFirstPark` scope knows it,
+  so the strategy can run the woken fiber to its next `park()` or end before returning — loom by
+  mounting its continuation from a scope-local queue, background threads by waiting for the woken
+  worker as for the first one. Put it into the SPI contract now, or leave it to that idea?
+- **`Q_nested_run_later`** — `runLater` inside a fiber is `session.access(...)`, which runs at the
+  next *drain*. A park that releases raw (`Condition.await()`, the handoff) drains nothing, so under
+  background threads the new fiber starts at a later push or the request's end, not at the parent's
+  park as `runLater`'s javadoc promises; later parks drain through their `ui.push()` (if the
+  unverified bullet of `R_unlock_pushes` holds), nesting a handoff inside the parent's park. Loom's
+  first park under `mountHere` is the same: the caller's ultimate unlock drains it. Loosen the
+  javadoc to "at the next drain", or make every `Completable.park()` drain first?
 - **`Q_epilogue_hook`** — should SB-Emulators reconcile in `ui.beforeClientResponse(...)` instead
   of after the listener? It then holds for every UIDL, pushes included, whatever the strategy.
   Does the API offer a "before every park" hook for it, or is Vaadin's own hook enough?
