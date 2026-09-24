@@ -71,10 +71,7 @@ Leaning: **C**, or **A + C** (interrupt *and* report) if the leak is judged wors
   `InterruptedException` or swallows it. Is that close enough, or should the backstop only ever
   target `parkAndAwait` parks, which are already covered by detach? In that case A buys nothing
   and C is the whole idea.
-- `Q_io_unmount`: under loom, *every* unmount releases the session lock, IO included — the carrier's
-  access task ends, other requests of the session run, and the block resumes in a later access
-  task. So a block doing `load(); /* JDBC read unmounts here */ render();` can interleave with
-  another request between the two statements. Session-unlock doesn't do that. Is this already
-  known and accepted? It is a consequence of the mechanism, reasoned from `R_unlock_pushes` and
-  `R_vt_scheduler`, **not measured**. If it's true, it probably deserves an `R_` entry and a README
-  limit, independently of this idea.
+- `Q_io_unmount`: measured true — `R_vt_unmount_releases_lock`. That breaks B above for good.
+  `loom-holds-the-lock-across-bare-unmounts.md` would also make a bare park hold the lock, which
+  turns this idea's silent leak into a loud freeze and may retire this file. Decide that one
+  first.
