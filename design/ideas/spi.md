@@ -25,9 +25,10 @@ app ──► vaadin-blocking-dialogs ──► vaadin-fibers-spi ◄── vaad
 - Settled: the three-layer split above; the strategy owns `park()`, so it can fiddle with the
   locks; the SPI is `runUntilFirstPark` + a strategy-owned `Completable` (sketch below); the
   contract is strict — no UIDL and no other request until the first park, the fiber continuing
-  elsewhere afterwards; Hacky is rejected.
+  elsewhere afterwards; a fiber holds the session lock everywhere except inside `park()` — loom
+  breaks that at IO unmounts and is accepted as "slightly broken" until fixed; Hacky is rejected.
 - Postponed by Martin: the probe of the raw-lock release for background threads.
-- Next: `Q_lock_between_parks`, `Q_complete_threading`, `Q_completable_param`, then the names.
+- Next: `Q_complete_threading`, `Q_completable_param`, then the names.
 
 Graduates when the modules land: the founding reasoning to a `D_` (it rewrites
 `D_pluggable_strategy`'s cost paragraph and `D_spi_exactly_one`), the layering to the AGENTS.md
@@ -190,7 +191,8 @@ public interface UIFiberStrategy {                       // Q_spi_name
      * Runs fiber as a new UI fiber and returns once it first parks or ends, holding the lock again.
      * Called holding the lock of session, outside any fiber. Between the call and its return
      * nothing reaches the browser, and no other request runs. A fiber that parked continues
-     * elsewhere once woken - on the strategy's own thread, never on the caller's.
+     * elsewhere once woken - on the strategy's own thread, never on the caller's. A fiber holds
+     * the session lock everywhere except inside Completable.park().
      */
     void runUntilFirstPark(VaadinSession session, Runnable fiber);
 
@@ -259,11 +261,11 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
   - background threads would release the holds from *inside* the unlock's drain. The raw release
     suits that too — `VaadinSession.unlock()` there would re-enter the drain — but the drain's own
     push then runs after the worker's first park, not before: check that is the push we want.
-- **`Q_lock_between_parks`** — does the SPI promise "the fiber holds the lock except inside
-  `park`" (`StrategySupport`'s class doc says a strategy owes it)? Loom breaks it at every IO
-  unmount. Either the promise holds and loom must fix it
-  (`loom-holds-the-lock-across-bare-unmounts.md`), or the SPI states it as a non-guarantee and
-  **One API, any strategy** weakens to "the same code runs, not always atomically".
+- **`Q_lock_between_parks`** — settled: the SPI promises the fiber holds the lock everywhere
+  except inside `park()`. Loom breaks it at every IO unmount (`R_vt_unmount_releases_lock`); for
+  now loom is accepted as "slightly broken", and the fix is
+  `loom-holds-the-lock-across-bare-unmounts.md` or something like it. The loom module's docs say so
+  until then.
 - **`Q_wrapping`** — the API wraps the body before handing it over, so the wrapper runs on the
   fiber's thread. Anything the wrapper must do on the *caller's* thread first (capturing the UI,
   `checkLockedUI`) happens in the API before `runUntilFirstPark`; confirm nothing in `runUIFiber` or
