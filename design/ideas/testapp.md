@@ -11,13 +11,12 @@ line and the README's "Running the demo".
 
 **One demo app per strategy** — `testapp-loom`, and `testapp-session-unlock` once that module
 exists — because the strategy is found through the SPI and more than one on the classpath is an
-error (`common-api.md`). Each is an `AppLayout` with a `SideNav`, one route per scenario. The two apps
+error (`D_spi_exactly_one`). Each is an `AppLayout` with a `SideNav`, one route per scenario. The two apps
 should run **the same demo components, differing only in the strategy jar on their classpath** —
 that is **One API, any strategy** made visible, and it stops the demos drifting apart. So the demo
 components live in a shared, unpublished module (`testapp-common`?) that depends only on
 `vaadin-blocking-dialogs`; each app is `Main` + its strategy dependency. The progress-dialog-around-
-a-job helper lives there too, as the example of Q6's outcome-future pattern (`common-api.md`,
-"Cancellation").
+a-job helper lives there too, as the example of the outcome-future pattern (`BlockingDialogs`' class doc, "Cancellation").
 
 ## Scenario candidates
 
@@ -38,7 +37,8 @@ a-job helper lives there too, as the example of Q6's outcome-future pattern (`co
 6. **Edge cases as buttons** — navigate away with a dialog open (the block is killed, its `finally`
    closes the dialog, nothing reported as an error); an exception thrown after the dialog (reaches
    the session `ErrorHandler`, shown as a notification); a dialog opened inside `synchronized`
-   (works on JDK 24+; explains `R_vt_pinning` on older JDKs); nested blocks.
+   (works on JDK 24+; explains `R_vt_pinning` on older JDKs); nested blocks; a double-clicked Save
+   whose second click finds the dialog open and is dropped (`D_input_exclusion`, both strategies).
 7. **Under the hood panel** — which thread runs the block (a virtual thread's name vs a worker's),
    how many blocks are parked right now, session lock hold count. Makes the strategies' difference
    tangible, and `Q_scale_budget` in the session-unlock idea measurable.

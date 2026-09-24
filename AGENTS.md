@@ -39,7 +39,7 @@ Every fact lives in exactly one of these; the others link to it.
 
 - `vaadin-blocking-dialogs` — the strategy-neutral API app code is written against; published.
 - `vaadin-blocking-dialogs-loom` — the virtual-thread strategy, ported from `../vaadin-loom`; published. Its test fixtures (`MockVirtualThreadAwareServlet`) are not.
-- `testapp` — Vaadin Boot demo, an `AppLayout` with one route per strategy; never published.
+- `testapp` — Vaadin Boot demo on the loom strategy, one app per strategy since a classpath holds one (`D_spi_exactly_one`); never published.
 
 ## Conventions
 

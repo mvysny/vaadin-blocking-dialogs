@@ -35,6 +35,39 @@ The loom strategy additionally needs:
 - **HTTP requests served by platform threads**, not virtual ones - with Vaadin Boot,
   `new VaadinBoot().useVirtualThreadsIfAvailable(false)`.
 
+## Usage
+
+Start a *block* from a listener; inside it, a dialog call returns the user's answer:
+
+```java
+button.addClickListener(e -> BlockingDialogs.runLater(() -> {
+    ConfirmDialog dialog = new ConfirmDialog();
+    dialog.setText("Delete " + file + "?");
+    dialog.setCancelable(true);
+    if (BlockingDialogs.showAndAwait(dialog) == ConfirmDialogOutcome.CONFIRM) {
+        delete(file);
+    }
+}));
+```
+
+A block ends quietly when its dialog goes away unanswered: the user navigates away, closes the tab,
+or the session expires. Its `finally` blocks run on the way out.
+
+### Beyond dialogs
+
+Underneath, a block can wait for any `CompletableFuture`, not only a dialog's answer.
+`BlockingDialogs.parkAndAwait(anchor, future)` parks until the future completes. The anchor is the
+component the wait belongs to, and the wait dies with it: a Save button waiting on its own progress
+bar, or a background job's result shown in a progress dialog. From a background thread,
+`BlockingDialogs.accessSynchronously(ui, block)` runs a block and waits for it, so a job can ask the
+user something halfway through.
+
+## Limits
+
+- **A waiting block does not survive session serialization.** A parked thread can't be serialized,
+  so a session with an open blocking dialog loses that dialog's wait under session persistence or
+  replication.
+
 ## Running the demo
 
 ```bash

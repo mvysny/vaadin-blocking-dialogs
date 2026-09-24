@@ -28,3 +28,49 @@ reach into JDK internals are what a conservative line-of-business app cannot tak
 session-unlock only: it is one probe old, and gives up virtual threads' scale. The cost we carry:
 the API is only what both can implement — a block may not lean on what one strategy gives for free,
 such as a bare `future.get()` that loom tolerates.
+
+## D_anchored_wait — Why does a wait end when its anchor detaches, rather than with an executor scope per UI, session or tab?
+
+A wait belongs to a component — a dialog anchors its own answer — and that component's detach is
+the one signal every death of a wait sends: navigating away, closing the dialog, a session destroy
+and a tab close all detach it (`R_session_destroy_detaches`). A scope — a registry of parked blocks
+per UI or session, killed from outside — would duplicate that signal as state both strategies keep
+in step, so there is none, and no backstop either. The verdict waits for the detaching UI's next
+response, because F5 on a `@PreserveOnRefresh` route detaches the view before it re-attaches it
+(`R_preserve_migration`). Why not a `VaadinRequestInterceptor.requestEnd` hook for that verdict: it
+needs a `VaadinServiceInitListener` shipped in our jar, and still a fallback for a destroy outside a
+request. Why no anchorless `parkAndAwait`: a wait that names no owner can only leak. The cost: a
+closed `@PreserveOnRefresh` tab is noticed only at heartbeat expiry — free under loom, a held worker
+thread under session-unlock.
+
+## D_spi_exactly_one — Why is the strategy found through `ServiceLoader`, exactly one, rather than handed in by the app?
+
+A setter, or an executor the app builds, is global mutable state that apps take up as a wiring
+API — and then "which strategy runs this block?" has more than one answer, and every call must route
+by executor. With exactly one on the classpath the strategy is a dependency choice (**One API, any
+strategy**), `BlockingDialogs` is statics over `BlockingExecutor.get()`, and none or two is an error
+on every call. Tests get their strategy the same way, from a `META-INF/services` file in test
+resources; a strategy that needs configuration reads it itself, as SPI providers do. The cost: one
+classpath runs one strategy, so demoing both takes one app per strategy.
+
+## D_input_exclusion — Why does `runLater` keep the session's other requests out until the block's first park, rather than just queue the block?
+
+The double-clicked Save button: the second click must find the first click's dialog already open,
+so that Vaadin's server-side modality drops it — Swing's "a modal blocks input from
+`setVisible(true)`". Without it every blocking action runs twice on a fast double click. Loom gives it by construction: the block's
+first segment runs inside the click request's ultimate unlock, before the lock is really released
+(`R_unlock_pushes`). A strategy whose block starts after the request responds pays for it: the
+request waits for the block's first park or end before responding — short and bounded, unlike the
+endless park of `R_async_push_no_response`. Not promised: a first segment that ends without parking
+releases the lock like any listener, and a later click runs the listener again.
+
+## D_two_helpers — Why only two `showAndAwait` helpers, rather than a `confirm(message)`, a Yes/No/Cancel and a text prompt?
+
+Every app builds its own dialogs — texts, themes, button order — so each ready-made helper would
+replicate `ConfirmDialog`'s API and still not fit. And Vaadin has no common openable type:
+`ConfirmDialog` extends `Component`, not `Dialog`, and `Dialog`, `ConfirmDialog` and `Notification`
+each declare their own `open()` / `close()`. So a helper is per type — `Dialog` with the app's own
+answer future, `ConfirmDialog` mapped onto `ConfirmDialogOutcome` — and both live only on the
+`BlockingDialogs` facade, so no strategy implements or overrides them. Anything else, a fourth
+button or a progress dialog around a job, is the app's own two lines around `parkAndAwait`; the
+testapp shows the progress dialog.

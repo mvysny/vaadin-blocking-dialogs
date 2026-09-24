@@ -3,7 +3,7 @@
 Ported from SB-Emulators' `ideas/blocking-strategy-manual-session-unlock.md` (probed on Vaadin
 25.2.6 / JDK 25, 2026-09-01). There it was a knob inside one app; here it becomes the
 `vaadin-blocking-dialogs-session-unlock` module, a second implementation of the common API
-(`D_pluggable_strategy`, and `common-api.md` beside this file). The measured Vaadin behaviour has
+(`D_pluggable_strategy`; the API is `BlockingExecutor`, the shared half `StrategySupport`). The measured Vaadin behaviour has
 already moved to `design/research.md` — `R_unlock_pushes`, `R_async_push_no_response`; this file
 keeps only the design, which is not done yet.
 
@@ -83,21 +83,20 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   `INLINE` executor for tests (then the suite doesn't exercise the real strategy — the classic
   hazard), or a test hook that waits until the worker is parked or finished before each lookup
   (Karibu's `TestingLifecycleHook.awaitBeforeLookup` looks like the seam).
-- **`Q_modal_gap`** — now a requirement: the common API promises input exclusion from `runLater`
-  to the block's first park or end (`common-api.md`, "Input exclusion"). The handoff opens a window
+- **`Q_modal_gap`** — now a requirement: `runLater` promises input exclusion until the block's
+  first park or end (`D_input_exclusion`). The handoff opens a window
   loom does not have — the request responds *before* the worker has the lock (3 ms in the probe; a
   non-fair lock queue under load), so a fast second click is processed first. Candidate fix, to
   probe: the listener's request thread releases its holds, waits for the worker's first park or end,
   re-takes them and responds; the second click queues behind the worker. Rejected in advance: a UI
   curtain at handoff — new machinery that only patches the window instead of closing it.
-- **`Q_cancellation`** — mostly answered by the common API's anchor model (`common-api.md`,
-  "Lifetime"): a parked worker is released because its future is cancelled when its anchor dies,
+- **`Q_cancellation`** — mostly answered by the anchor model (`D_anchored_wait`): a parked worker is released because its future is cancelled when its anchor dies,
   and it unwinds through `CancellationException`; session destroy and tab close both reach it
-  (`common-api.md`). Left for this strategy: a closed `@PreserveOnRefresh` tab is only noticed at
+  (`R_session_destroy_detaches`). Left for this strategy: a closed `@PreserveOnRefresh` tab is only noticed at
   heartbeat expiry (default ~15 min), and its worker is held until then — price it in `Q_scale_budget`.
 - **`Q_stale_after_relock`** — while unlocked, other requests mutate the UI freely; the UI may
   detach, the session may invalidate. On re-lock, rebind the `CurrentInstance`s to
-  `anchor.getUI()` (`common-api.md`, "Lifetime") — shared with loom, not new risk.
+  the anchor's last UI, as `StrategySupport.awaitAnchored` already does — shared with loom, not new risk.
 - **`Q_reentrancy`** — nested dialogs, and a block started from inside a block. Hold-count
   bookkeeping must survive N levels; *Await Lock* dissolves it. The probe only did one level.
 - **`Q_worker_pool`** — who owns the pool: one per session, per UI, or app-wide? Bounded? What

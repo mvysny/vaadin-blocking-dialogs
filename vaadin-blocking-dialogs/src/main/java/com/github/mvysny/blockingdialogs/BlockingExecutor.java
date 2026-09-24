@@ -61,6 +61,12 @@ public interface BlockingExecutor {
      *
      * @apiNote A {@link CancellationException} escaping the block - its wait died - ends it quietly;
      * anything else goes to the session's {@link com.vaadin.flow.server.ErrorHandler}.
+     * <p>
+     * Inside the block {@link UI#getCurrent()} and {@link com.vaadin.flow.server.VaadinSession#getCurrent()}
+     * are set, but {@link com.vaadin.flow.server.VaadinRequest#getCurrent()} and
+     * {@link com.vaadin.flow.server.VaadinResponse#getCurrent()} are {@code null} under every strategy:
+     * capture request-scoped values before calling this. Thread-locals the block sets itself survive
+     * its parks.
      * @throws IllegalStateException unless the calling thread holds the session lock with
      *                               {@link UI#getCurrent()} set - a listener, or code inside
      *                               {@link UI#access}. Background threads call {@link #access}.
