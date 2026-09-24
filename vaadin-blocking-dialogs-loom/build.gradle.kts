@@ -15,6 +15,7 @@ dependencies {
 
     // the app brings its own Vaadin
     compileOnly(libs.vaadin.core)
+    compileOnly(libs.jakarta.servlet)
 
     // MockVirtualThreadAwareServlet, shared with the testapp's tests
     testFixturesApi(libs.karibu.testing)
@@ -26,7 +27,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-// LoomUtils reflects into java.lang.ThreadBuilders$VirtualThreadBuilder (JDK-8308541)
+// LoomUtils reflects into java.lang.VirtualThread and ThreadBuilders$VirtualThreadBuilder (JDK-8308541)
 tasks.withType<Test> {
     jvmArgs(listOf("--add-opens", "java.base/java.lang=ALL-UNNAMED"))
 }

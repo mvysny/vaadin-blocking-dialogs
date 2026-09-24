@@ -49,6 +49,10 @@ subprojects {
             exceptionFormat = TestExceptionFormat.FULL
             showCauses = true
         }
+        // the loom strategy's opt-in to Java 21-23; CI's JDK 21 job passes -D to gradlew
+        System.getProperty("blockingdialogs.loom.allowPinningJdk")?.let {
+            systemProperty("blockingdialogs.loom.allowPinningJdk", it)
+        }
     }
 
     java {

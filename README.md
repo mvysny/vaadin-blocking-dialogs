@@ -27,13 +27,31 @@ your code is blocked, and only push can carry it there.
 
 The loom strategy additionally needs:
 
+- **Its servlet**, whose session lock a virtual thread can take. `LoomVaadinServlet` registers
+  nowhere by itself; subclass it:
+  ```java
+  @WebServlet(urlPatterns = "/*", asyncSupported = true)
+  public class AppServlet extends LoomVaadinServlet {}
+  ```
+  An app with a `VaadinService` subclass of its own - Spring's `SpringVaadinServletService` - or a
+  mocked service in its UI unit tests routes the session lock through the wrapper instead:
+  ```java
+  @Override
+  protected Lock getSessionLock(WrappedSession wrappedSession) {
+      return VirtualThreadAwareLock.wrap(this, wrappedSession, super.getSessionLock(wrappedSession));
+  }
+  ```
+  Without it, every `runLater` throws, naming the fix.
 - **Java 24+ at runtime** (it compiles for Java 21). On Java 21-23 a virtual thread that blocks
   inside a `synchronized` block deadlocks the session - see
-  [JEP 491](https://openjdk.org/jeps/491) and [vaadin-loom#2](https://github.com/mvysny/vaadin-loom/issues/2).
+  [JEP 491](https://openjdk.org/jeps/491) and [vaadin-loom#2](https://github.com/mvysny/vaadin-loom/issues/2) -
+  so the strategy refuses to start there, unless you accept the risk with
+  `-Dblockingdialogs.loom.allowPinningJdk=true`.
 - **`--add-opens java.base/java.lang=ALL-UNNAMED`** on the JVM: the strategy reflects into the JDK
   to run virtual threads on Vaadin's UI "thread" ([JDK-8308541](https://bugs.openjdk.org/browse/JDK-8308541)).
 - **HTTP requests served by platform threads**, not virtual ones - with Vaadin Boot,
-  `new VaadinBoot().useVirtualThreadsIfAvailable(false)`.
+  `new VaadinBoot().useVirtualThreadsIfAvailable(false)`. On a virtual request thread blocks still
+  work, but a double-clicked button may run its blocking listener twice.
 
 ## Usage
 

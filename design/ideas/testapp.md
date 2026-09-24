@@ -1,7 +1,7 @@
 # A testapp worth demoing
 
-vaadin-loom's demo is one button and two nested "Are you sure?" confirms ending in a notification.
-It proves the mechanism works, but not why anybody would want it, and it exercises none of the
+The testapp is vaadin-loom's demo, ported: one button and two nested "Are you sure?" confirms ending
+in a notification. It proves the mechanism works, but not why anybody would want it, and it exercises none of the
 edge cases that make blocking hard. The testapp here is also the system test of both strategies
 (its Karibu tests drive it), so the demo *is* the regression suite — every scenario below should be
 a test too. Graduates when the testapp is built: nothing durable expected beyond a module-map

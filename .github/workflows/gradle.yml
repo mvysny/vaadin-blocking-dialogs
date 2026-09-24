@@ -30,7 +30,8 @@ jobs:
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v6
     - name: Build with Gradle
-      run: ./gradlew clean build '-Pvaadin.productionMode' --no-daemon --no-watch-fs
+      # JDK 21 pins (R_vt_pinning), which the loom strategy refuses unless told otherwise
+      run: ./gradlew clean build '-Pvaadin.productionMode' --no-daemon --no-watch-fs ${{ matrix.java < 24 && '-Dblockingdialogs.loom.allowPinningJdk=true' || '' }}
 
   design-docs:
     runs-on: ubuntu-latest

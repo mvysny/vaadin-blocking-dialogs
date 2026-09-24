@@ -54,7 +54,9 @@ final class StrategyLoader {
         try {
             ServiceLoader.load(BlockingExecutor.class, classLoader).forEach(found::add);
         } catch (ServiceConfigurationError e) {
-            return new Result(null, "A blocking strategy on the classpath failed to load: " + e.getMessage(), e);
+            // a provider's constructor failing is the cause; its message is the one naming the fix
+            final String reason = e.getCause() == null ? e.getMessage() : e.getMessage() + ": " + e.getCause().getMessage();
+            return new Result(null, "A blocking strategy on the classpath failed to load: " + reason, e);
         }
         if (found.isEmpty()) {
             return new Result(null, "No blocking strategy on the classpath: add one, such as"

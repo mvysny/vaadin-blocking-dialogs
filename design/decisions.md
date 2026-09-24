@@ -74,3 +74,28 @@ answer future, `ConfirmDialog` mapped onto `ConfirmDialogOutcome` — and both l
 `BlockingDialogs` facade, so no strategy implements or overrides them. Anything else, a fourth
 button or a progress dialog around a job, is the app's own two lines around `parkAndAwait`; the
 testapp shows the progress dialog.
+
+## D_loom_servlet — Why does loom ship a servlet that registers nowhere, rather than install its session lock by itself?
+
+`getSessionLock()` is a protected method of `VaadinService`, so only a service subclass can wrap the
+lock (`R_vt_lock_identity`) — the app must subclass something, and a servlet is what a Vaadin Boot
+or plain-servlet app already declares. `LoomVaadinServlet` carries no `@WebServlet`, so a library jar
+never claims `/*` behind the app's back; the app's one-line subclass does. An app with a service
+class of its own, Spring's, calls `VirtualThreadAwareLock.wrap()` from its override, and every
+`runLater` refuses an unwrapped lock, naming both fixes. Why not seed the lock from an
+`HttpSessionListener`: it needs the service name up front, loses Vaadin's instrumented lock
+(`SessionLockListener`), relies on the container scanning a `@WebListener` in a library jar (Spring
+Boot doesn't), and `VaadinSession.refreshLock()` forbids swapping the lock later. Why no published
+Karibu fixture: an app may test with Vaadin's own UI unit testing, so the README shows the override
+instead.
+
+## D_loom_jdk_gate — Why does loom refuse to start on Java 21-23, rather than warn, or compile for Java 24+?
+
+There a block parking inside any monitor deadlocks its session for good (`R_vt_pinning`), a
+JDK-internal monitor included, so no code review rules it out. A warning or a README line is how
+vaadin-loom#2 happened: nobody reads either until the session hangs. So the executor's constructor
+throws, naming JEP 491, and `BlockingExecutor.get()` repeats it on every call — unless
+`-Dblockingdialogs.loom.allowPinningJdk=true`, for shops stuck on 21 LTS that accept the risk. CI's
+JDK 21 job sets it, so the loom tests still run on the floor we compile for. Why not `--release 24`:
+the same protection as a cryptic `UnsupportedClassVersionError`, with no way out. The cost: the gate
+is per JVM, so an app that never parks inside a monitor still has to opt in.

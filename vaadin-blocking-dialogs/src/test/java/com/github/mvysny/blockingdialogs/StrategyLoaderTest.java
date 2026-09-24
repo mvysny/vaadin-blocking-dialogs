@@ -66,6 +66,13 @@ public class StrategyLoaderTest {
         assertSame(first.getCause(), second.getCause());
     }
 
+    @Test
+    public void aFailingConstructorsMessageIsInTheError() throws IOException {
+        final StrategyLoader.Result result = StrategyLoader.load(withProviders(RefusingStrategy.class.getName()));
+        final IllegalStateException e = assertThrows(IllegalStateException.class, result::getOrThrow);
+        assertTrue(e.getMessage().endsWith(": run on Java 99+"), e.getMessage());
+    }
+
     /**
      * @return a classloader whose only {@code BlockingExecutor} services file lists {@code providers}.
      */
@@ -85,6 +92,25 @@ public class StrategyLoaderTest {
      * A second strategy, never registered: {@link #moreThanOne()} adds it.
      */
     public static final class OtherStrategy implements BlockingExecutor {
+        @Override
+        public void runLater(@NotNull Runnable block) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    /**
+     * A strategy refusing to start, as the loom one does on a JDK that pins.
+     */
+    public static final class RefusingStrategy implements BlockingExecutor {
+        public RefusingStrategy() {
+            throw new IllegalStateException("run on Java 99+");
+        }
+
         @Override
         public void runLater(@NotNull Runnable block) {
             throw new UnsupportedOperationException();

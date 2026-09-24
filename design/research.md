@@ -28,6 +28,9 @@ above and cut the fat — a marker already says where a claim came from.
 - The pending tasks and the push both run *before* `getLockInstance().unlock()` really releases
   the lock, so a request queued on the lock sees their effects — an `access` task that opens a modal
   dialog has it open before the next request is handled. **[src, Vaadin 25.3.0]**
+- `session.access()` from a thread that finds the lock free takes it and releases it at once
+  (`ensureAccessQueuePurged`), so that thread drains the whole queue — a background thread can end
+  up running other threads' access tasks. **[src, Vaadin 25.3.0]**
 
 ## R_async_push_no_response — Flow's client: an async push never ends a request
 
@@ -111,3 +114,6 @@ above and cut the fat — a marker already says where a claim came from.
   `runPendingAccessTasks` polls the queue until it is empty. **[src, Vaadin 25.3.0]**
 - A closed tab reaches `removeUI` too, via `removeClosedUIs` — at once on the unload beacon,
   otherwise after the missed-heartbeat timeout (3 × the 5-minute default interval). **[docs]**
+- `removeClosedUIs` removes each closed UI inside its own `ui.accessSynchronously`, so detach
+  listeners see the closing UI as `UI.getCurrent()`, whichever tab's request reaps it. **[src, Vaadin
+  25.3.0]**
