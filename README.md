@@ -1,0 +1,53 @@
+# Vaadin Blocking Dialogs
+
+A library that lets Vaadin Flow code block on a dialog - `if (confirm("Delete?")) delete();` - the
+way Swing's `JOptionPane` does, instead of splitting the logic into callbacks. The code is suspended
+until the user answers while the browser keeps receiving UI updates. How it is suspended is a
+pluggable strategy: virtual threads, or a platform thread parked with the session lock released.
+
+> **Work in progress.** Nothing is published to Maven Central yet, and the API is not settled.
+
+Read [Vaadin and Blocking Dialogs](https://mvysny.github.io/vaadin-blocking-dialogs/) on why this is
+such a hard thing to do in a web framework.
+
+## Modules
+
+| Artifact | What it is |
+|---|---|
+| `vaadin-blocking-dialogs` | The strategy-neutral API your code is written against. |
+| `vaadin-blocking-dialogs-loom` | The virtual-thread strategy, grown out of the [vaadin-loom](https://github.com/mvysny/vaadin-loom) prototype. |
+| `vaadin-blocking-dialogs-session-unlock` | Planned: parks an ordinary platform thread with the Vaadin session lock released. |
+
+Group id: `com.github.mvysny.vaadin-blocking-dialogs`. The `testapp` module is a demo, not published.
+
+## Requirements
+
+Every strategy needs `@Push` on your `AppShellConfigurator`: the dialog travels to the browser while
+your code is blocked, and only push can carry it there.
+
+The loom strategy additionally needs:
+
+- **Java 24+ at runtime** (it compiles for Java 21). On Java 21-23 a virtual thread that blocks
+  inside a `synchronized` block deadlocks the session - see
+  [JEP 491](https://openjdk.org/jeps/491) and [vaadin-loom#2](https://github.com/mvysny/vaadin-loom/issues/2).
+- **`--add-opens java.base/java.lang=ALL-UNNAMED`** on the JVM: the strategy reflects into the JDK
+  to run virtual threads on Vaadin's UI "thread" ([JDK-8308541](https://bugs.openjdk.org/browse/JDK-8308541)).
+- **HTTP requests served by platform threads**, not virtual ones - with Vaadin Boot,
+  `new VaadinBoot().useVirtualThreadsIfAvailable(false)`.
+
+## Running the demo
+
+```bash
+./gradlew :testapp:run
+```
+
+Then open [http://localhost:8080](http://localhost:8080).
+
+## Credits
+
+The session-unlock strategy is [Matthias Perktold's](https://github.com/mperktold/blocking-dialogs/)
+idea; the loom strategy follows the [vaadin.com blog post](https://vaadin.com/blog/tackling-blocking-dialogs-in-web-applications-with-vaadin).
+
+## License
+
+Licensed under the [MIT License](LICENSE).

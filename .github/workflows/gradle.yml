@@ -1,0 +1,40 @@
+# Copyright 2026 Martin Vysny
+#
+# Licensed under the MIT License. See the LICENSE file in the project root
+# for the full license text.
+
+name: Gradle
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        java: [21, 25]
+        # the loom strategy's reflection hack is JVM-implementation-sensitive (JDK-8308541)
+        distribution: [oracle, corretto, temurin]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Set up JDK ${{ matrix.java }}
+      uses: actions/setup-java@v6
+      with:
+        java-version: ${{ matrix.java }}
+        distribution: ${{ matrix.distribution }}
+        # intentionally no `cache:` - setup-gradle handles Gradle caching
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v6
+    - name: Build with Gradle
+      run: ./gradlew clean build '-Pvaadin.productionMode' --no-daemon --no-watch-fs
+
+  design-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Design doc tripwires
+      run: ./design/verify_design_tripwires.sh
