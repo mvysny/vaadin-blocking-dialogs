@@ -38,10 +38,11 @@ inside its access task, holding the lock, and waits for that UI fiber's next con
 
 - The state lives on `SessionCarrier`, already one per UI fiber (`runUntilFirstPark` news one up):
   `releasing` (set on the UI fiber's own thread right before `future.get()` in
-  `LoomUIFiberRunner.WakeUp.park()`, cleared on resume) and a one-slot hand-off queue.
+  `LoomUIFiberRunner.WakeUp.park()`, cleared on resume) and a one-slot hand-off queue, which the
+  watchdog owns (`Q_timeout_backstop`).
 - `SessionCarrier.mount`: run the continuation; when it returns with the thread still alive and
   `!releasing`, it unmounted for something else. So `take()` the next continuation from the
-  hand-off queue and run it inline, looping, still inside the same access task. The loop lives in
+  hand-off queue and run it inline, looping, still inside the same access task. The run-take loop lives in
   `mount`, so the first segment (inside `Thread.start()`) and every later one get it; on a virtual
   drainer it goes inside the task submitted to `Handoff.POOL`.
 - `SessionCarrier.execute`: the first submit (the start) and every submit while `releasing` go to
@@ -66,6 +67,29 @@ inside its access task, holding the lock, and waits for that UI fiber's next con
 - `Q_nested_ui_fibers`: each UI fiber has its own `SessionCarrier`, so its own queue, and
   `runUntilFirstPark` refuses a UI virtual thread, so no UI fiber mounts another on its carrier.
   Still worth a test: `accessSynchronously` from a UI fiber into a new one.
+- `Q_timeout_backstop`: a bare `future.get()` waiting for a click now deadlocks the session, as
+  under session-unlock; it stays a deadlock, and a watchdog reports it, shipping with the fix.
+  Thread dumps alone don't cut it: the JVM's detector finds no Java-level cycle (the carrier waits
+  on an ownerless queue, the UI fiber on a socket or a future, the row lock lives in the DB), and
+  the culprit line sits on the UI fiber's virtual thread, which `jstack` omits — it takes
+  `jcmd Thread.dump_to_file`.
+  - A class of its own, `LockHoldWatchdog` (name open; `Handoff` is taken by the virtual-drainer
+    pool), owning the one-slot hand-off queue: `SessionCarrier.execute` `offer`s to it, `mount`
+    calls its `take()`, which owns the loop and the logging.
+  - `take()` `poll`s with a timeout; on each timeout it WARNs "UI fiber X has held the session lock
+    for N s outside `park()`" with the UI fiber's own stack and a hint (a bare `Future.get()`, a
+    DB lock, a long query?), backing off (10 s, 30 s, 90 s, …), and keeps waiting holding the lock.
+    Once the continuation arrives after a WARN it logs "resumed after N s", telling a slow query
+    from a deadlock.
+  - `blockingdialogs.uifiber.loom.lockHoldWarnSeconds`, default 10, 0 disables. SLF4J, as
+    `UIFibers`; the loom module gains `implementation(libs.slf4j.api)`.
+  - A slow query WARNs too, rightly: it freezes the whole session, as it would the EDT.
+  - Blind to a carrier stuck *inside* `continuation.run()` — file IO, JDK 21 pinning — but a plain
+    thread dump shows those, the carrier's own stack being the culprit.
+  - Loom only: session-unlock's thread blocks directly, with no loop to hook. A diagnostic changes
+    no behaviour, so it stays out of the SPI.
+  - `[unverified]` `Thread.getStackTrace()` of an unmounted virtual thread on our own scheduler
+    returns the suspended continuation's stack; a test confirms it, then `research.md` gets it.
 
 ## Open questions
 
@@ -84,11 +108,7 @@ inside its access task, holding the lock, and waits for that UI fiber's next con
   classic Swing apps share one `Connection`, so A joins B's transaction — though a `Timer` or an
   `invokeLater` fires inside any modal loop (in Vaadin: a background `ui.access()` starting a UI
   fiber). Vaadin's per-UI modal is the weaker `DOCUMENT_MODAL`, so it is likelier here, not
-  different in kind.
-- `Q_timeout_backstop`: a bare `future.get()` waiting for a click now deadlocks the session, as
-  under session-unlock. Leaning: stay a deadlock, plus a watchdog — past N seconds (a system
-  property, ~10) the carrier WARNs with the UI fiber's stack and keeps holding, like a Swing EDT
-  hang detector. It is also how `Q_parked_holder_deadlock` gets diagnosed.
+  different in kind. The watchdog (`Q_timeout_backstop`) at least names A's stuck line.
 - `Q_jdk21`: with `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`, `synchronized` pins instead of
   unmounting. That already holds the lock, so this changes nothing there.
 - Afterwards an app that wants the UI live during long IO has no accidental way left; it needs a
@@ -101,4 +121,5 @@ inside its access task, holding the lock, and waits for that UI fiber's next con
 The probe's assertions flipped (clicks stay 0 across the read, one UI fiber per double click,
 `runUntilPark` returns with the dialog open), plus: the resubmit arriving on the carrier itself;
 IO after a dialog answer, carried by the answering request; IO on the virtual-drainer
-(`Handoff`) path.
+(`Handoff`) path; the watchdog WARNing with the UI fiber's stack past its threshold, then
+"resumed", and silent at 0.
