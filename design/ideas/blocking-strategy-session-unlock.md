@@ -93,7 +93,7 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   `runUntilPark` is the same wait at the call site instead of before the response
   (`D_run_until_park`): release, wait for the first park or end, re-take, return.
   The release must bypass `VaadinSession.unlock()`, whose ultimate unlock would push the
-  listener's half-done state: see `spi.md`, "What `runUntilPark` really promises".
+  listener's half-done state: see "On the SPI" below.
 - **`Q_cancellation`** — mostly answered by the anchor model (`D_anchored_wait`): a parked worker is released because its future is cancelled when its anchor dies,
   and it unwinds through `CancellationException`; session destroy and tab close both reach it
   (`R_session_destroy_detaches`). Left for this strategy: a closed `@PreserveOnRefresh` tab is only noticed at
@@ -110,6 +110,56 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   be barged by a stream of requests. Probably academic at LOB concurrency; note it, don't design for it.
 - **`Q_scale_budget`** — one parked platform thread per open dialog per user, held for human
   think-time. Pick and state the number we accept in the README, rather than discovering it.
+
+## On the SPI
+
+Moved from `spi.md`, deferred with this whole runner: SB-Emulators runs loom only. The contract it
+must meet is `UIFiberRunnerSpi`'s javadoc — no UIDL and no other request until `runUntilFirstPark`
+returns, every `park()` draining first, a wake-up an access task (`D_wake_is_access_task`).
+
+**The sketch above breaks `runUntilFirstPark`.** The caller's release, as `Q_modal_gap` has it, is an
+ultimate `VaadinSession.unlock()`, which pushes the listener's half-done state (`R_unlock_pushes`).
+
+**Candidate fix, postponed by Martin — release the raw lock, not the session.**
+`VaadinSession.unlock()` is what drains and pushes; the `ReentrantLock` underneath knows nothing of
+UIDL, and a release through AQS (`Condition.await()`) drains nothing and pushes nothing
+(`R_unlock_pushes`). So:
+
+1. the caller releases its holds on `session.getLockInstance()` directly — no drain, no push;
+2. the worker `session.lock()`s, runs the first segment, and at its *first* park releases the raw
+   lock as well and signals the caller — no push there either;
+3. the caller re-takes its holds and returns; the request's normal response carries the listener's
+   changes, the first segment's and the epilogue's together, in one UIDL;
+4. every *later* park of the worker drains, pushes and then releases — nobody else is going to
+   respond for it then.
+
+In `Condition` terms, *Await Lock* above: `park()` drains (`VaadinService.runPendingAccessTasks`),
+pushes, then `await()`s; `complete()` queues `session.access(() -> hand the lock raw to the worker,
+wait for its next park or end)`; `runUntilFirstPark` starts the worker and `await()`s a handoff
+condition the worker `signal()`s at its first park. A fiber that ends without parking must also
+release raw and signal, or its final `VaadinSession.unlock()` pushes the half-done state before the
+caller's response. `runLater` — `session.access(() -> runUntilFirstPark(…))` — is then the same
+handoff from inside the drain.
+
+Holes to probe:
+
+- **`Q_handoff_gap`** — while the raw lock is free, another thread can take it: another tab's
+  request, or a background `ui.access` that finds the lock free and drains the whole queue
+  (`R_unlock_pushes`, last bullet). Its ultimate unlock pushes the half-done state and runs a
+  request in the gap — both halves of the promise broken, if only in a window of one first segment.
+  A fair handoff narrows it, but the lock is non-fair (`Q_lock_fairness`). Close it, or state it?
+- **`Q_raw_release_state`** — is anything besides the drain and the push tied to
+  `VaadinSession.unlock()`: `CurrentInstance` bookkeeping, the session's `lockInstance` checks in
+  `VaadinService`, Karibu's lock assumptions? The worker's `hasLock()` must be true while it runs.
+- **`Q_drain_push_order`** — a `runLater` releases the holds from *inside* the unlock's drain. The
+  raw release suits that too — `VaadinSession.unlock()` there would re-enter the drain — but the
+  drain's own push then runs after the worker's first park, not before: check that is the push we want.
+- The same UI can't send a second click into the gap regardless: the browser is still waiting for
+  the response of the very request doing the waiting (`R_async_push_no_response`, first bullet).
+
+If the fix doesn't hold, `runUntilFirstPark` becomes an optional SPI capability
+(`Q_optional_run_until_park`), and `runLater` needs its own primitive, since `D_input_exclusion`
+wants the same first-park wait before the response.
 
 ## Re-measuring
 

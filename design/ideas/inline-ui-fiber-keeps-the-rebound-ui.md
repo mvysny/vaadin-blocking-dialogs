@@ -13,6 +13,10 @@ So "wrap the body" is two shapes, not one:
 - **Inline** — the outer fiber must keep whatever UI a park inside rebound to. Skip the restore when
   a park rebound the UI, or restore to the rebound one.
 
+SB-Emulators needs it once it adopts the API: a `callSwing` inside a fiber runs inline, and its
+modals follow F5 (`BlockingDialogF5Test`'s chained dialog), so after an inline modal the outer
+Swing code must see the new UI.
+
 Lands with the API rebuild on the SPI (`spi.md`), where `wrap(ui, body)` is written anew; graduates
 into that wrapper's doc comment, and a test beside `inlineParkAcrossF5` that asserts the fix
 instead of the bug.
