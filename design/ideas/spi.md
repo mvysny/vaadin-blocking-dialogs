@@ -58,8 +58,8 @@ why-not hold the reasons. Nothing uses it yet: the API and loom still speak `Blo
   docs say so meanwhile. The runner sees every park: the registry `session-destroy-ends-bare-parks.md` wants.
   The virtual thread is named after the session or a counter: the runner never sees the UI.
 - Postponed by Martin: the probe of the raw-lock release for background threads.
-- Next: `Q_run_later_derived`, `Q_eager_check`, `Q_fiber_condition`, `Q_epilogue_hook`,
-  `Q_api_class_name`, and the prose
+- Deferred to `ui-fiber-condition.md`: a `Condition` a fiber can wait on.
+- Next: `Q_run_later_derived`, `Q_eager_check`, `Q_epilogue_hook`, `Q_api_class_name`, and the prose
   rename "strategy" → "runner". Then port loom onto the SPI and rebuild the API on it.
 
 Graduates when the API is rebuilt: the founding reasoning (below) to a `D_` that rewrites
@@ -202,13 +202,6 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
   runUntilFirstPark(…))` the throw happens in the drain and lands in the `ErrorHandler`. Accept it
   — a misconfiguration is loud on first use either way, the message names the fix — or give the
   SPI a check the API calls on the caller's thread? Leaning: accept, and keep the SPI minimal.
-- **`Q_fiber_condition`** — should a fiber get a working `Condition`? Loom's pretend hold throws
-  on `newCondition()`; a background-thread runner's native one would `await()` raw — no drain, no
-  push — breaking `D_wake_is_access_task`. Nested blocking dialogs need none: each fiber parks on
-  its own `Completable`, a Swing secondary loop inside a secondary loop. Should a use case appear
-  (SB-Emulators emulating `SecondaryLoop`?), the API can build one on `Completable` — `await()` a
-  new `Completable`'s park, `signal()` its `complete()` — under every runner, the SPI untouched.
-  Until then the SPI leaves it undefined.
 - **`Q_epilogue_hook`** — should SB-Emulators reconcile in `ui.beforeClientResponse(...)` instead
   of after the listener? It then holds for every UIDL, pushes included, whatever the strategy.
   Does the API offer a "before every park" hook for it, or is Vaadin's own hook enough?
