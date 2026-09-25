@@ -90,11 +90,8 @@ inside its access task, holding the lock, and waits for that UI fiber's next con
     no behaviour, so it stays out of the SPI.
   - `[unverified]` `Thread.getStackTrace()` of an unmounted virtual thread on our own scheduler
     returns the suspended continuation's stack; a test confirms it, then `research.md` gets it.
-
-## Open questions
-
-- `Q_parked_holder_deadlock`: holding the lock across IO lets a UI fiber wait on what a *parked*
-  UI fiber holds. Fiber B opens a transaction, updates a row, parks in `confirm("Commit?")`; fiber
+- `Q_parked_holder_deadlock` — an accepted risk; the watchdog alerts us, and a real case reopens
+  it. Holding the lock across IO lets a UI fiber wait on what a *parked* UI fiber holds. Fiber B opens a transaction, updates a row, parks in `confirm("Commit?")`; fiber
   A, in another tab of the same session, updates the same row — its JDBC read waits on the row
   lock holding the session lock, so B's answer never arrives, until the DB's lock timeout. Within
   one tab the modal blocks A's click; across tabs it doesn't (the lock is per session, dialogs per
@@ -108,9 +105,12 @@ inside its access task, holding the lock, and waits for that UI fiber's next con
   classic Swing apps share one `Connection`, so A joins B's transaction — though a `Timer` or an
   `invokeLater` fires inside any modal loop (in Vaadin: a background `ui.access()` starting a UI
   fiber). Vaadin's per-UI modal is the weaker `DOCUMENT_MODAL`, so it is likelier here, not
-  different in kind. The watchdog (`Q_timeout_backstop`) at least names A's stuck line.
+  different in kind. The watchdog (`Q_timeout_backstop`) names A's stuck line.
 - `Q_jdk21`: with `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`, `synchronized` pins instead of
   unmounting. That already holds the lock, so this changes nothing there.
+
+## Follow-up
+
 - Afterwards an app that wants the UI live during long IO has no accidental way left; it needs a
   deliberate one — a SwingWorker-like `awaitInBackground(task)` that parks the UI fiber on an
   executor, ideally behind a modal progress dialog so `D_input_exclusion` holds. Its own idea if
