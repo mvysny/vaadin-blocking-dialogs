@@ -72,13 +72,13 @@ final class LoomUtils {
      * virtual thread creating it - {@code Thread.ofVirtual()} and
      * {@code Executors.newVirtualThreadPerTaskExecutor()} alike. Started from this thread it would
      * run on {@code carrier}, under the session lock, queued behind the thread that started it; so
-     * every other continuation goes to a JVM-wide pool of platform carriers instead.
+     * every other continuation goes to {@link #CARRIERS} instead.
      */
     static Thread newVirtualThread(Executor carrier, String name, Runnable task) {
         Objects.requireNonNull(carrier);
         final AtomicReference<Runnable> own = new AtomicReference<>();
         final Thread thread = newVirtualBuilder(continuation ->
-                (continuation == own.get() ? carrier : InheritedThreadCarriers.POOL).execute(continuation))
+                (continuation == own.get() ? carrier : CARRIERS).execute(continuation))
                 .name(name)
                 .unstarted(task);
         own.set(continuationOf(thread));
@@ -86,14 +86,14 @@ final class LoomUtils {
     }
 
     /**
-     * Carries the virtual threads that inherited the scheduler of a {@link #newVirtualThread}.
-     * Cached rather than bounded: a continuation that blocks without unmounting holds its carrier,
-     * and a bounded pool would queue unrelated threads behind it.
+     * The JVM-wide platform threads carrying continuations that can't run where they were
+     * submitted: those of the virtual threads that inherited a {@link #newVirtualThread}'s
+     * scheduler, and a UI fiber's segment reaching a virtual drainer. Cached rather than bounded: a
+     * continuation that blocks without unmounting holds its carrier, and a bounded pool would queue
+     * unrelated threads - and sessions - behind it.
      */
-    private static final class InheritedThreadCarriers {
-        static final ExecutorService POOL = Executors.newCachedThreadPool(
-                Thread.ofPlatform().daemon().name("blocking-dialogs-inherited-carrier-", 0).factory());
-    }
+    static final ExecutorService CARRIERS = Executors.newCachedThreadPool(
+            Thread.ofPlatform().daemon().name("blocking-dialogs-carrier-", 0).factory());
 
     /**
      * The one {@code Runnable} the JDK hands a virtual thread's scheduler on every submit - at

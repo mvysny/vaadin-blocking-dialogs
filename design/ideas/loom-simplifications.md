@@ -2,7 +2,7 @@
 
 A review pass over the loom runner found no layering to remove, only small cleanups. Replacing
 `awaitUninterruptibly` with `CompletableFuture.join()` (23d865d), tidying `VirtualThreadAwareLock`'s
-pretend mode, and one wrapper around the UI fiber's body are already done; the rest follow,
+pretend mode, one wrapper around the UI fiber's body, and one carrier pool are already done; the rest follow,
 safe and mechanical ones first. Check with `./gradlew`.
 
 ## Main code
@@ -11,9 +11,6 @@ safe and mechanical ones first. Check with `./gradlew`.
   and `runContinuation` are each resolved on first use, each wrapping failure in an ISE naming
   `--add-opens`. `checkAvailable()` runs in the runner's constructor anyway, so one helper for
   "open this, or throw" would remove the duplication. The gain is small.
-- **Two carrier pools could be one**: `LoomUIFiberRunner.Handoff` and
-  `LoomUtils.InheritedThreadCarriers` are both cached daemon platform pools for continuations that
-  don't run on the session. One pool in `LoomUtils` removes a holder class.
 
 ## Tests
 
@@ -34,9 +31,3 @@ safe and mechanical ones first. Check with `./gradlew`.
   the thread's state.
 - The `getSessionLock` override repeated in `MockVirtualThreadAwareServlet`: it's forced by the
   different superclass (`MockService`).
-
-## Open questions
-
-- `Q_merge_pools`: merging loses the two thread-name prefixes (`blocking-dialogs-handoff-`,
-  `blocking-dialogs-inherited-carrier-`), which tell apart the two kinds of carrier in a thread
-  dump. Worth one class less?

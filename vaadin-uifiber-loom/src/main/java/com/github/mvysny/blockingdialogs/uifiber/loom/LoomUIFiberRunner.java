@@ -16,8 +16,6 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -272,7 +270,7 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
          */
         private void mount(Runnable continuation) {
             if (Thread.currentThread().isVirtual()) {
-                CompletableFuture.runAsync(() -> carry(continuation), Handoff.POOL).join();
+                CompletableFuture.runAsync(() -> carry(continuation), LoomUtils.CARRIERS).join();
             } else {
                 carry(continuation);
             }
@@ -293,14 +291,5 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
                 next = handoff.take();
             }
         }
-    }
-
-    /**
-     * The platform threads that carry a continuation for a virtual drainer, one segment each. Cached:
-     * a bounded pool would queue sessions behind each other.
-     */
-    private static final class Handoff {
-        static final ExecutorService POOL = Executors.newCachedThreadPool(
-                Thread.ofPlatform().daemon().name("blocking-dialogs-handoff-", 0).factory());
     }
 }
