@@ -26,10 +26,6 @@ pressure; **not needed** = SB-Emulators has no use for it; graduate or keep on i
 
 ## Later
 
-- **`epilogue-before-every-uidl.md`.** The gap it names is real: a fiber woken by an `executeJs`
-  answer or a background `dispose()` skips SB-Emulators' epilogue. But the fix is on SB-Emulators'
-  side. The library only matters if `Q_epilogue_hook` wants a hook here rather than Vaadin's
-  `beforeClientResponse`.
 - **`session-unlock-runner.md`.** For SB-Emulators it would drop the JDK 24 floor, `--add-opens`,
   the lock wrapper, and three of its deployment-refusal throws (the JDK check, the unwrapped lock,
   virtual request threads). It replaces SB-Emulators' own
@@ -65,5 +61,17 @@ Recorded so they aren't mistaken for library asks:
 - `Q_foreign_tasks`: could `EHelper.callSwing` drop its access-queue drain after `runUntilPark`?
   The drain settles the modal fiber a click woke before the next event (`D_wake_is_access_task`),
   but it also runs whatever foreign access tasks are queued. Untested.
+- The epilogue gap (seen reading SB-Emulators, not run): a fiber woken by something other than
+  `callSwing`, such as an `executeJs` answer in the clipboard or preferences bridge or a background
+  `dispose()`, skips `FieldReconciler.reconcileAll` + `AutoShutdown.checkAppOver`, though
+  `FieldReconciler`'s doc says every post-park continuation funnels through `callSwing`. The fix:
+  right after each of the four `parkAndAwait` calls returns, arm a one-shot
+  `ui.beforeClientResponse(ui, ctx -> epilogue)`. The resumed segment runs in the drain
+  (`D_wake_is_access_task`) and the UIDL runs the callback after it (`R_unlock_pushes`), under any
+  runner. Arming once per resumption avoids the livelock `FieldReconciler` warns a self-rearming
+  callback causes. Keep `callSwing`'s own epilogue: tests read reconciled state right after `_click`,
+  and whether Karibu's `_click` runs `beforeClientResponse` is unchecked. Also unchecked: whether
+  `checkAppOver` may close the session from inside that callback. The library adds no hook for it,
+  since Vaadin's is enough.
 - The docs sweep: 47 SB-Emulators files still name `:loom` or its executor.
 - A real-browser run of Sampler's dialog and F5 flows. So far everything is Karibu only.

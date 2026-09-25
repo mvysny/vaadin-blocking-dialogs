@@ -104,7 +104,9 @@ the parked request's response (`R_async_push_no_response`), the call could retur
 fiber's end, and under Karibu no thread is left to click OK. Why exceptions go to the
 `ErrorHandler`, inline too, where `UI.accessSynchronously`'s inline path throws to the caller: the
 later segments have no caller to throw to, and a UI fiber behaves the same wherever it was started
-from. Why not settle the UI fibers it woke before returning: `D_wake_is_access_task`.
+from. Why not settle the UI fibers it woke before returning: `D_wake_is_access_task`. Why no API
+hook before every park for such an epilogue: Vaadin's `ui.beforeClientResponse(...)` already runs
+before every UIDL, a push's included (`R_unlock_pushes`), and also sees state changed outside any UI fiber.
 
 ## D_two_helpers — Why only two `showAndAwait` helpers, rather than a `confirm(message)`, a Yes/No/Cancel and a text prompt?
 
