@@ -35,13 +35,31 @@ why-not hold the reasons. Nothing uses it yet: the API and loom still speak `Blo
     is an answer, `complete(CANCEL)`; an interrupt is `park()` throwing `InterruptedException`.
   - The app-facing half of the one-thread promise — code after `confirm()` sees the thread-locals
     it saw before, MDC and transaction context included — goes into `BlockingDialogs`' docs.
+  - `Q_wrapping` holds: `runUIFiber` and `awaitAnchored` need no runner internals, only the SPI's
+    promises — the lock held with `hasLock()` true, one thread, `park()`'s semantics. The caller's
+    thread does `checkLockedUI`, captures `ui` and `ui.getSession()`, and picks the inline branch;
+    the rest runs in `wrap(ui, body)`, inside the runner's own prologue.
+  - `parkAndAwait`'s bridge completes the `Completable` directly when the completing thread holds
+    the lock, and only otherwise goes through `session.access`. An already-done future runs
+    `whenComplete`'s callback at once on the fiber itself: through `session.access` it would leave
+    `c` open, and the fiber would park for nothing — inside `runUntilFirstPark`, returning to the
+    caller before the fiber got anywhere.
+  - The wrapper guarantees `body` throws nothing: a throwing `ErrorHandler` is caught and logged,
+    not left to the runner (under loom, the virtual thread's uncaught-exception handler, stderr).
+  - The inline branch wraps differently: `inline-ui-fiber-keeps-the-rebound-ui.md`.
+  - Around `c.park()` the API clears its in-fiber flag, and saves and clears the `CurrentInstance`s
+    with it, restoring both on wake before the rebind: a parked fiber isn't running, and the
+    scripted runner plays the next click on the fiber's thread (`D_in_fiber_flag`). Saved and
+    restored, not merely cleared, so the fiber's own `CurrentInstance` entries survive the park.
 - Settled, to build with the loom port: `Completable` wraps a `CompletableFuture`, `fail()` doing
   `completeExceptionally` — `get()` throws a `CancellationException` cause as-is, like `cancel()`,
   so no `cancel()` is needed. Loom breaks "only `park()` releases" at every IO unmount
   (`R_vt_unmount_releases_lock`) until `loom-holds-the-lock-across-bare-unmounts.md` lands; its
   docs say so meanwhile. The runner sees every park: the registry `session-destroy-ends-bare-parks.md` wants.
+  The virtual thread is named after the session or a counter: the runner never sees the UI.
 - Postponed by Martin: the probe of the raw-lock release for background threads.
-- Next: `Q_run_later_derived`, `Q_wrapping`, `Q_epilogue_hook`, `Q_api_class_name`, and the prose
+- Next: `Q_run_later_derived`, `Q_eager_check`, `Q_fiber_condition`, `Q_epilogue_hook`,
+  `Q_api_class_name`, and the prose
   rename "strategy" → "runner". Then port loom onto the SPI and rebuild the API on it.
 
 Graduates when the API is rebuilt: the founding reasoning (below) to a `D_` that rewrites
@@ -178,10 +196,19 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
   - background threads would release the holds from *inside* the unlock's drain. The raw release
     suits that too — `VaadinSession.unlock()` there would re-enter the drain — but the drain's own
     push then runs after the worker's first park, not before: check that is the push we want.
-- **`Q_wrapping`** — the API wraps the body before handing it over, so the wrapper runs on the
-  fiber's thread. Anything the wrapper must do on the *caller's* thread first (capturing the UI,
-  `checkLockedUI`) happens in the API before `runUntilFirstPark`; confirm nothing in `runUIFiber` or
-  `awaitAnchored` needs strategy internals.
+- **`Q_eager_check`** — `runUntilFirstPark` throws `IllegalStateException` where it can't run a
+  fiber: loom's unwrapped session lock, a virtual thread. Today `runLater` calls `start()` on the
+  caller, so a misconfigured app fails at the call site; with `runLater = session.access(() ->
+  runUntilFirstPark(…))` the throw happens in the drain and lands in the `ErrorHandler`. Accept it
+  — a misconfiguration is loud on first use either way, the message names the fix — or give the
+  SPI a check the API calls on the caller's thread? Leaning: accept, and keep the SPI minimal.
+- **`Q_fiber_condition`** — should a fiber get a working `Condition`? Loom's pretend hold throws
+  on `newCondition()`; a background-thread runner's native one would `await()` raw — no drain, no
+  push — breaking `D_wake_is_access_task`. Nested blocking dialogs need none: each fiber parks on
+  its own `Completable`, a Swing secondary loop inside a secondary loop. Should a use case appear
+  (SB-Emulators emulating `SecondaryLoop`?), the API can build one on `Completable` — `await()` a
+  new `Completable`'s park, `signal()` its `complete()` — under every runner, the SPI untouched.
+  Until then the SPI leaves it undefined.
 - **`Q_epilogue_hook`** — should SB-Emulators reconcile in `ui.beforeClientResponse(...)` instead
   of after the listener? It then holds for every UIDL, pushes included, whatever the strategy.
   Does the API offer a "before every park" hook for it, or is Vaadin's own hook enough?

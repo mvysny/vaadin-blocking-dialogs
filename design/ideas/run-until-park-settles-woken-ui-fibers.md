@@ -58,11 +58,7 @@ first-park wait of `D_input_exclusion`, over a set of UI fibers instead of one.
 
 ## Side findings from the same review
 
-- **Inline branch, stale UI after F5**: `RunUntilParkProbeTest.inlineParkAcrossF5`. The inner UI fiber
-  resumes on the new UI, but the outer UI fiber, after `runUntilPark` returns, sees the **old, closed
-  UI**: `runUIFiber`'s `restoreInstances(previous)` undoes `awaitAnchored`'s rebind.
-  `StrategySupport.accessSynchronously`'s inline branch has the same shape. Fix: skip the restore
-  when a park rebound the UI, or restore to the rebound one.
+- **Inline branch, stale UI after F5**: moved to `inline-ui-fiber-keeps-the-rebound-ui.md`.
 - **IO counts as a park**: `RunUntilParkProbeTest.ioBeforeTheFirstDialog`. `runUntilPark` returns
   at a socket read before the dialog opens, because `Thread.start()` returns at *any* unmount
   (`R_vt_unmount_releases_lock`). Fixed as a side effect by

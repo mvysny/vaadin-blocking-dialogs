@@ -162,10 +162,13 @@ asserting straight after `_click` still needs a roundtrip.
 ## D_in_fiber_flag — Why does the API itself track whether code runs in a UI fiber, rather than ask the runner?
 
 The answer decides whether a call may park, runs inline or would deadlock, and the API gets it
-exact by construction: a thread-local its wrapper sets around `body`, whatever the runner. A
-runner's own answer, "one of my threads", is broader — the wrapper's error path, an idle worker
-between two fibers — and the scripted test runner, which runs `body` on the caller's thread, would
-only keep a copy of the flag. So the SPI promises instead that a fiber keeps one thread from start
-to end, which the `CurrentInstance`s need anyway. The cost: that promise rules out a runner mounting
-a raw `Continuation` on whichever carrier is free — which would strand `UI.getCurrent()` on the old
-carrier anyway.
+exact by construction: a thread-local its wrapper sets around `body` and clears around each park —
+a parked fiber isn't running, and the scripted test runner plays the next click on its thread. The
+runner keeps a flag of its own, since `runUntilFirstPark` must refuse a call from inside a fiber,
+but the API doesn't ask it. Asking would leave one source of truth: a runner bug would send the API
+down the wrong branch and silence the runner's own check with it — odd behaviour, no exception.
+With two flags set independently, an API bug that starts a fiber from inside one meets the
+runner's `IllegalStateException`. Both rest on the SPI's promise that a fiber keeps one thread
+from start to end, which the `CurrentInstance`s need anyway. The cost: two thread-locals, and no
+runner mounting a raw `Continuation` on whichever carrier is free — which would strand
+`UI.getCurrent()` on the old carrier anyway.

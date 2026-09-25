@@ -25,13 +25,18 @@ import com.vaadin.flow.server.VaadinSession;
  * <b>The lock.</b> A UI fiber holds the session lock whenever it runs, except inside
  * {@link Completable#park()}: every {@code park()} releases it, nothing else does. A fiber blocked
  * on IO, a bare {@code Future.get()} or {@code Thread.sleep()} keeps the lock, and the session waits
- * with it. The "first park" is thus the first {@code park()}, never an IO wait.
+ * with it. The "first park" is thus the first {@code park()}, never an IO wait. Holding it,
+ * {@code session.hasLock()} answers {@code true}, whoever really owns the lock. The fiber's own code
+ * may nest {@code lock()} / {@code unlock()} pairs; anything else on the lock - an {@code unlock()}
+ * beyond those, {@code getHoldCount()} - is undefined.
  * <p>
  * <b>The thread.</b> A UI fiber runs on one thread from start to end: {@code Thread.currentThread()}
  * is the same after every {@code park()}, so the thread-locals {@code body} sets survive it -
  * {@code UI.getCurrent()} included. Which thread is the runner's choice - a new virtual thread, a
  * worker, the caller's own - and not necessarily the fiber's alone: a runner may run another fiber
- * on it inside a {@code park()}, provided that fiber ends before the park returns.
+ * on it inside a {@code park()}, provided that fiber ends before the park returns. A parked fiber
+ * isn't running: code the runner runs inside its {@code park()} is outside any UI fiber, and may
+ * start one.
  * <p>
  * <b>Not the runner's job</b> - the API does it around these calls: the {@code body} it hands in
  * sets {@code UI.getCurrent()} and {@code VaadinSession.getCurrent()} itself, marks itself as a UI
@@ -56,6 +61,11 @@ public interface UIFiberRunnerSpi {
      * @param session the fiber's session, whose lock it holds; not a UI, since the fiber follows its
      *                anchor to a new UI on a refresh.
      * @param body    the fiber's code; throws nothing.
+     * @throws IllegalStateException before running any of {@code body}, if the caller holds no lock
+     *                               of {@code session}, runs inside a UI fiber (a parked one doesn't
+     *                               count), or is a thread the runner can't carry, or the app isn't
+     *                               set up for the runner. Every runner checks all four, tracking the
+     *                               fibers it runs itself: a bad call throws rather than misbehaves.
      */
     void runUntilFirstPark(VaadinSession session, Runnable body);
 
