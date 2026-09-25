@@ -94,10 +94,9 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      * Call it from the virtual thread itself, and pair it with {@link #exitUIVirtualThread}.
      *
      * @param sessionLock {@link VaadinSession#getLockInstance()}
-     * @throws IllegalStateException if the session lock isn't a {@link VirtualThreadAwareLock}
      */
-    static void enterUIVirtualThread(Lock sessionLock) {
-        pretendHold.set(new PretendHold(asVirtualThreadAware(sessionLock)));
+    static void enterUIVirtualThread(VirtualThreadAwareLock sessionLock) {
+        pretendHold.set(new PretendHold(sessionLock));
     }
 
     static void exitUIVirtualThread() {
@@ -116,7 +115,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      * belongs to.
      */
     static boolean isUIVirtualThreadOf(Lock sessionLock) {
-        return sessionLock instanceof VirtualThreadAwareLock lock && lock.isPretending();
+        return sessionLock instanceof VirtualThreadAwareLock lock && lock.currentHold() != null;
     }
 
     /**
@@ -134,21 +133,19 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
     }
 
     /**
-     * Whether the caller is a UI fiber's virtual thread of <em>this</em> lock's session.
+     * @return the pretend hold if the caller is a UI fiber's virtual thread of <em>this</em> lock's
+     * session, {@code null} otherwise - pretend mode is on exactly when it's non-null
      */
-    private boolean isPretending() {
+    private @Nullable PretendHold currentHold() {
         final PretendHold hold = pretendHold.get();
-        return hold != null && hold.lock == this;
-    }
-
-    private PretendHold hold() {
-        return Objects.requireNonNull(pretendHold.get());
+        return hold != null && hold.lock == this ? hold : null;
     }
 
     @Override
     public void lock() {
-        if (isPretending()) {
-            hold().depth++;
+        final PretendHold hold = currentHold();
+        if (hold != null) {
+            hold.depth++;
         } else {
             delegate.lock();
         }
@@ -156,12 +153,13 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
 
     @Override
     public void lockInterruptibly() throws InterruptedException {
-        if (isPretending()) {
+        final PretendHold hold = currentHold();
+        if (hold != null) {
             // a real lockInterruptibly() throws even when the acquire wouldn't have blocked
             if (Thread.interrupted()) {
                 throw new InterruptedException();
             }
-            hold().depth++;
+            hold.depth++;
         } else {
             delegate.lockInterruptibly();
         }
@@ -169,8 +167,9 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
 
     @Override
     public boolean tryLock() {
-        if (isPretending()) {
-            hold().depth++;
+        final PretendHold hold = currentHold();
+        if (hold != null) {
+            hold.depth++;
             return true;
         }
         return delegate.tryLock();
@@ -178,8 +177,9 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
 
     @Override
     public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
-        if (isPretending()) {
-            hold().depth++;
+        final PretendHold hold = currentHold();
+        if (hold != null) {
+            hold.depth++;
             return true;
         }
         return delegate.tryLock(timeout, unit);
@@ -193,8 +193,8 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      */
     @Override
     public void unlock() {
-        if (isPretending()) {
-            final PretendHold hold = hold();
+        final PretendHold hold = currentHold();
+        if (hold != null) {
             if (hold.depth == 0) {
                 throw new IllegalStateException("The Vaadin session lock can't be fully unlocked from a UI virtual thread");
             }
@@ -211,7 +211,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      */
     @Override
     public Condition newCondition() {
-        if (isPretending()) {
+        if (currentHold() != null) {
             throw new UnsupportedOperationException("Conditions on the Vaadin session lock are not available on a UI virtual thread");
         }
         return delegate.newCondition();
@@ -226,7 +226,8 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      */
     @Override
     public int getHoldCount() {
-        return isPretending() ? hold().depth + 2 : delegate.getHoldCount();
+        final PretendHold hold = currentHold();
+        return hold != null ? hold.depth + 2 : delegate.getHoldCount();
     }
 
     /**
@@ -235,7 +236,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      */
     @Override
     public boolean isHeldByCurrentThread() {
-        return isPretending() || delegate.isHeldByCurrentThread();
+        return currentHold() != null || delegate.isHeldByCurrentThread();
     }
 
     @Override
@@ -255,7 +256,8 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
 
     @Override
     public String toString() {
-        return getClass().getSimpleName() + "(" + delegate + (isPretending() ? ", pretend depth " + hold().depth : "") + ")";
+        final PretendHold hold = currentHold();
+        return getClass().getSimpleName() + "(" + delegate + (hold != null ? ", pretend depth " + hold.depth : "") + ")";
     }
 
     /**

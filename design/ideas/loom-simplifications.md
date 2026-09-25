@@ -1,17 +1,12 @@
 # Simplifications in `vaadin-uifiber-loom`
 
 A review pass over the loom runner found no layering to remove, only small cleanups. Replacing
-`awaitUninterruptibly` with `CompletableFuture.join()` is already done (23d865d); the rest follow,
+`awaitUninterruptibly` with `CompletableFuture.join()` (23d865d) and tidying `VirtualThreadAwareLock`'s
+pretend mode are already done; the rest follow,
 safe and mechanical ones first. Check with `./gradlew`.
 
 ## Main code
 
-- **`VirtualThreadAwareLock` pretend mode reads its ThreadLocal twice** per operation:
-  `isPretending()`, then `hold()`. Replace both with one `@Nullable PretendHold pretendHold()` that
-  returns the hold only for *this* lock; then `lock()`, `tryLock()` and the rest become
-  `if (hold != null) hold.depth++; else delegate.lock();`, and `hold()` goes away.
-- **`enterUIVirtualThread(Lock)` checks again with `asVirtualThreadAware`**, although
-  `runUntilFirstPark` has just done it. Make it take a `VirtualThreadAwareLock`.
 - **The body is wrapped twice**: `runUntilFirstPark` wraps it in `enterUIVirtualThread` /
   `exitUIVirtualThread`, and `SessionCarrier`'s constructor wraps it again in
   `current.set` / `remove`. Pass the lock into `SessionCarrier` and do both in one try/finally.
