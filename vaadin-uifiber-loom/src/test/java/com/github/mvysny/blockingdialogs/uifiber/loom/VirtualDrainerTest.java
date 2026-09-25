@@ -8,12 +8,8 @@ package com.github.mvysny.blockingdialogs.uifiber.loom;
 
 import com.github.mvysny.blockingdialogs.UIFibers;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
-import com.github.mvysny.kaributesting.v10.Routes;
-import com.github.mvysny.kaributesting.v10.mock.MockedUI;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.server.VaadinSession;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -34,20 +30,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * "request" thread queues on the lock while the virtual thread drains; the fiber's segment must come
  * first.
  */
-public class VirtualDrainerProbeTest {
-    private static Routes routes;
+public class VirtualDrainerTest {
     private final List<String> log = new CopyOnWriteArrayList<>();
-    private final List<Throwable> reportedErrors = new CopyOnWriteArrayList<>();
-
-    @BeforeAll
-    public static void discoverRoutes() {
-        routes = new Routes().autoDiscoverViews("com.github.mvysny.blockingdialogs.uifiber.loom");
-    }
+    private List<Throwable> reportedErrors;
 
     @BeforeEach
     public void setupVaadin() {
-        MockVaadin.setup(MockedUI::new, new MockVirtualThreadAwareServlet(routes));
-        VaadinSession.getCurrent().setErrorHandler(event -> reportedErrors.add(event.getThrowable()));
+        reportedErrors = LoomTests.setupVaadin();
     }
 
     @AfterEach
@@ -56,14 +45,13 @@ public class VirtualDrainerProbeTest {
     }
 
     /**
-     * A platform thread that takes the session lock the way a request does, logs, and lets it go.
+     * A request that logs once it gets the session lock.
      * <p>
      * The drainer logs its release only once {@code access()} returns, after the lock is already free,
      * so the request waits for that entry before logging its own; otherwise the two race.
      */
-    private Thread queueARequest(VaadinSession session, CountDownLatch drainerReleased) {
-        final Thread request = Thread.ofPlatform().start(() -> {
-            session.lock();
+    private Thread queueARequest(CountDownLatch drainerReleased) {
+        return LoomTests.queueARequest(() -> {
             try {
                 if (!drainerReleased.await(5, TimeUnit.SECONDS)) {
                     log.add("request took the lock before the drainer returned");
@@ -71,16 +59,8 @@ public class VirtualDrainerProbeTest {
                 log.add("request");
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
-            } finally {
-                session.unlock();
             }
         });
-        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (request.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
-            Thread.onSpinWait();
-        }
-        assertEquals(Thread.State.WAITING, request.getState(), "the request queued on the session lock");
-        return request;
     }
 
     /**
@@ -89,23 +69,19 @@ public class VirtualDrainerProbeTest {
      */
     private void drainOnAVirtualThread(Runnable body) throws InterruptedException {
         final UI ui = UI.getCurrent();
-        final VaadinSession session = VaadinSession.getCurrent();
         final Thread[] request = new Thread[1];
         final CountDownLatch drainerReleased = new CountDownLatch(1);
-        session.unlock();
-        try {
+        LoomTests.withSessionLockReleased(() -> {
             Thread.ofVirtual().start(() -> {
                 ui.access(() -> {
-                    request[0] = queueARequest(session, drainerReleased);
+                    request[0] = queueARequest(drainerReleased);
                     body.run();
                 });
                 log.add("drainer released");
                 drainerReleased.countDown();
             }).join();
             request[0].join(TimeUnit.SECONDS.toMillis(5));
-        } finally {
-            session.lock();
-        }
+        });
     }
 
     @Test
@@ -170,20 +146,15 @@ public class VirtualDrainerProbeTest {
     @Test
     public void runUntilParkFromAVirtualThreadReturnsAtTheFirstPark() throws InterruptedException {
         final UI ui = UI.getCurrent();
-        final VaadinSession session = VaadinSession.getCurrent();
         final CompletableFuture<String> answer = new CompletableFuture<>();
-        session.unlock();
-        try {
-            Thread.ofVirtual().start(() -> ui.accessSynchronously(() -> {
-                UIFibers.runUntilPark(() -> {
-                    log.add("segment");
-                    log.add("resumed: " + UIFibers.parkAndAwait(ui, answer));
-                });
-                log.add("runUntilPark returned");
-            })).join();
-        } finally {
-            session.lock();
-        }
+        LoomTests.withSessionLockReleased(() ->
+                Thread.ofVirtual().start(() -> ui.accessSynchronously(() -> {
+                    UIFibers.runUntilPark(() -> {
+                        log.add("segment");
+                        log.add("resumed: " + UIFibers.parkAndAwait(ui, answer));
+                    });
+                    log.add("runUntilPark returned");
+                })).join());
         assertEquals(List.of("segment", "runUntilPark returned"), log);
 
         answer.complete("yes");

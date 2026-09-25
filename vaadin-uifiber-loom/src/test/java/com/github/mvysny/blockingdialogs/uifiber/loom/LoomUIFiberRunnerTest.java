@@ -10,12 +10,9 @@ import com.github.mvysny.blockingdialogs.UIFibers;
 import com.github.mvysny.blockingdialogs.uifiber.spi.Completable;
 import com.github.mvysny.blockingdialogs.uifiber.spi.UIFiberRunnerSpi;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
-import com.github.mvysny.kaributesting.v10.Routes;
-import com.github.mvysny.kaributesting.v10.mock.MockedUI;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinSession;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -40,8 +37,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * app does.
  */
 public class LoomUIFiberRunnerTest {
-    private static Routes routes;
-
     private final LoomUIFiberRunner runner = new LoomUIFiberRunner();
 
     /**
@@ -64,17 +59,10 @@ public class LoomUIFiberRunnerTest {
      */
     private final List<Throwable> bodyFailures = new CopyOnWriteArrayList<>();
 
-    @BeforeAll
-    public static void discoverRoutes() {
-        routes = new Routes().autoDiscoverViews("com.github.mvysny.blockingdialogs.uifiber.loom");
-    }
-
     @BeforeEach
     public void setupVaadin() {
-        MockVaadin.setup(MockedUI::new, new MockVirtualThreadAwareServlet(routes));
+        reportedErrors = LoomTests.setupVaadin();
         session = VaadinSession.getCurrent();
-        reportedErrors = new ArrayList<>();
-        VaadinSession.getCurrent().setErrorHandler(event -> reportedErrors.add(event.getThrowable()));
     }
 
     @AfterEach
@@ -99,7 +87,7 @@ public class LoomUIFiberRunnerTest {
         @Test
         public void refusesAnUnwrappedSessionLockAtSessionInit() {
             MockVaadin.tearDown();
-            final Throwable e = assertThrows(Throwable.class, () -> MockVaadin.setup(routes));
+            final Throwable e = assertThrows(Throwable.class, () -> MockVaadin.setup(LoomTests.ROUTES));
             final StringBuilder messages = new StringBuilder();
             boolean isError = false;
             for (Throwable t = e; t != null; t = t.getCause()) {
@@ -325,21 +313,16 @@ public class LoomUIFiberRunnerTest {
         @Test
         public void runUntilParkRunsOnAVirtualThreadOutsideAUIFiber() throws InterruptedException {
             final UI ui = UI.getCurrent();
-            final VaadinSession session = VaadinSession.getCurrent();
             final AtomicReference<Throwable> thrown = new AtomicReference<>();
-            session.unlock();
-            try {
-                Thread.ofVirtual().start(() -> ui.accessSynchronously(() -> {
-                    try {
-                        UIFibers.runUntilPark(() -> log.add("UI fiber"));
-                        log.add("returned");
-                    } catch (Throwable t) {
-                        thrown.set(t);
-                    }
-                })).join();
-            } finally {
-                session.lock();
-            }
+            LoomTests.withSessionLockReleased(() ->
+                    Thread.ofVirtual().start(() -> ui.accessSynchronously(() -> {
+                        try {
+                            UIFibers.runUntilPark(() -> log.add("UI fiber"));
+                            log.add("returned");
+                        } catch (Throwable t) {
+                            thrown.set(t);
+                        }
+                    })).join());
             assertNull(thrown.get());
             assertEquals(List.of("UI fiber", "returned"), log);
         }
@@ -382,22 +365,16 @@ public class LoomUIFiberRunnerTest {
          * continuation can't mount on it: it goes to a platform thread instead.
          */
         @Test
-        public void byABackgroundVirtualThreadWhileTheLockIsFree() throws InterruptedException {
-            final VaadinSession session = VaadinSession.getCurrent();
+        public void byABackgroundVirtualThreadWhileTheLockIsFree() throws Exception {
             final CompletableFuture<String> answer = new CompletableFuture<>();
             final CompletableFuture<String> resumed = new CompletableFuture<>();
             UIFibers.runLater(() -> resumed.complete(UIFibers.parkAndAwait(UI.getCurrent(), answer)));
             MockVaadin.clientRoundtrip();
 
-            session.unlock();
-            try {
+            LoomTests.withSessionLockReleased(() -> {
                 Thread.ofVirtual().start(() -> answer.complete("hello")).join();
                 assertEquals("hello", resumed.get(5, TimeUnit.SECONDS));
-            } catch (Exception e) {
-                fail(e);
-            } finally {
-                session.lock();
-            }
+            });
             assertEquals(List.of(), reportedErrors);
         }
     }

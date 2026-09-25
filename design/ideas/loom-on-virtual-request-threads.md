@@ -1,7 +1,7 @@
 # Loom on virtual request threads, and virtual threads waking a UI fiber
 
 A continuation reaching a *virtual* drainer runs on a platform handoff thread while the drainer
-waits, holding the session lock (`LoomUIFiberRunner.SessionCarrier.mount`; `VirtualDrainerProbeTest`
+waits, holding the session lock (`LoomUIFiberRunner.SessionCarrier.mount`; `VirtualDrainerTest`
 shows it for a fiber start, a wake-up, a cascade and `runUntilPark`, JBR 25.0.4). Two questions
 follow from it.
 

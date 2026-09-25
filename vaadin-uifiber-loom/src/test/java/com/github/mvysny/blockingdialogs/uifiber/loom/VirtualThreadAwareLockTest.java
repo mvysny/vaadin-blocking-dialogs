@@ -8,17 +8,13 @@ package com.github.mvysny.blockingdialogs.uifiber.loom;
 
 import com.github.mvysny.blockingdialogs.UIFibers;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
-import com.github.mvysny.kaributesting.v10.Routes;
-import com.github.mvysny.kaributesting.v10.mock.MockedUI;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinSession;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,20 +28,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * its own carrier holds, and the carrier waits for it holding the lock.
  */
 public class VirtualThreadAwareLockTest {
-    private static Routes routes;
-
     private List<Throwable> reportedErrors;
-
-    @BeforeAll
-    public static void discoverRoutes() {
-        routes = new Routes().autoDiscoverViews("com.github.mvysny.blockingdialogs.uifiber.loom");
-    }
 
     @BeforeEach
     public void setupVaadin() {
-        MockVaadin.setup(MockedUI::new, new MockVirtualThreadAwareServlet(routes));
-        reportedErrors = new ArrayList<>();
-        VaadinSession.getCurrent().setErrorHandler(event -> reportedErrors.add(event.getThrowable()));
+        reportedErrors = LoomTests.setupVaadin();
     }
 
     @AfterEach
@@ -173,12 +160,8 @@ public class VirtualThreadAwareLockTest {
         })));
         MockVaadin.clientRoundtrip(true);
         // this test thread holds the session lock again, so the child needs a gap to take it in
-        session.unlock();
-        try {
-            assertTrue(child.get().join(Duration.ofSeconds(5)), "the child never got the session lock");
-        } finally {
-            session.lock();
-        }
+        LoomTests.withSessionLockReleased(() ->
+                assertTrue(child.get().join(Duration.ofSeconds(5)), "the child never got the session lock"));
         assertTrue(gotTheLock.get(), "the child must have held the real session lock");
         assertEquals(List.of(), reportedErrors);
     }

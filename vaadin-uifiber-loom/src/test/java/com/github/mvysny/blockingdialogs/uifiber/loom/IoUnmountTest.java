@@ -10,14 +10,10 @@ import com.github.mvysny.blockingdialogs.BlockingDialogs;
 import com.github.mvysny.blockingdialogs.ConfirmDialogOutcome;
 import com.github.mvysny.blockingdialogs.UIFibers;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
-import com.github.mvysny.kaributesting.v10.Routes;
-import com.github.mvysny.kaributesting.v10.mock.MockedUI;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
-import com.vaadin.flow.server.VaadinSession;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +26,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.github.mvysny.kaributesting.v10.LocatorJ._click;
@@ -43,17 +38,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * queues on the lock meanwhile, and must get it only once the UI fiber parks or ends.
  */
 public class IoUnmountTest {
-    private static Routes routes;
     private final List<String> log = new CopyOnWriteArrayList<>();
-
-    @BeforeAll
-    public static void discoverRoutes() {
-        routes = new Routes().autoDiscoverViews("com.github.mvysny.blockingdialogs.uifiber.loom");
-    }
 
     @BeforeEach
     public void setupVaadin() {
-        MockVaadin.setup(MockedUI::new, new MockVirtualThreadAwareServlet(routes));
+        LoomTests.setupVaadin();
     }
 
     @AfterEach
@@ -108,38 +97,11 @@ public class IoUnmountTest {
     }
 
     /**
-     * A platform thread that takes the session lock the way a request does, and runs {@code body}
-     * holding it; returns once the thread queues on the lock the test thread holds.
-     */
-    private static Thread queueARequest(Runnable body) {
-        final VaadinSession session = VaadinSession.getCurrent();
-        final Thread request = Thread.ofPlatform().start(() -> {
-            session.lock();
-            try {
-                body.run();
-            } finally {
-                session.unlock();
-            }
-        });
-        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (request.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
-            Thread.onSpinWait();
-        }
-        assertEquals(Thread.State.WAITING, request.getState(), "the request queued on the session lock");
-        return request;
-    }
-
-    /**
      * Lets the queued {@code request} have the lock, and takes it back once the request is done.
      */
     private static void letIn(Thread request) throws InterruptedException {
-        final VaadinSession session = VaadinSession.getCurrent();
-        session.unlock();
-        try {
-            assertTrue(request.join(Duration.ofSeconds(5)), "the request never got the lock");
-        } finally {
-            session.lock();
-        }
+        LoomTests.withSessionLockReleased(() ->
+                assertTrue(request.join(Duration.ofSeconds(5)), "the request never got the lock"));
     }
 
     @Test
@@ -150,7 +112,7 @@ public class IoUnmountTest {
                 wire.read();
                 log.add("after IO");
             });
-            final Thread request = queueARequest(() -> log.add("request"));
+            final Thread request = LoomTests.queueARequest(() -> log.add("request"));
             wire.answerLater();
             MockVaadin.clientRoundtrip();
             letIn(request);
@@ -169,7 +131,7 @@ public class IoUnmountTest {
             }
             log.add("after sleep");
         });
-        final Thread request = queueARequest(() -> log.add("request"));
+        final Thread request = LoomTests.queueARequest(() -> log.add("request"));
         MockVaadin.clientRoundtrip();
         letIn(request);
         assertEquals(List.of("before sleep", "after sleep", "request"), log);
@@ -185,7 +147,7 @@ public class IoUnmountTest {
             Thread.yield();
             log.add("after yield");
         });
-        final Thread request = queueARequest(() -> log.add("request"));
+        final Thread request = LoomTests.queueARequest(() -> log.add("request"));
         MockVaadin.clientRoundtrip();
         letIn(request);
         assertEquals(List.of("before yield", "after yield", "request"), log);
@@ -204,7 +166,7 @@ public class IoUnmountTest {
             assertEquals(List.of(), log, "parked");
 
             answer.complete("yes");
-            final Thread request = queueARequest(() -> log.add("request"));
+            final Thread request = LoomTests.queueARequest(() -> log.add("request"));
             wire.answerLater();
             MockVaadin.clientRoundtrip();
             letIn(request);
@@ -232,7 +194,7 @@ public class IoUnmountTest {
             }));
             ui.add(save);
             _click(save);
-            final Thread secondClick = queueARequest(() ->
+            final Thread secondClick = LoomTests.queueARequest(() ->
                     log.add("second click finds a modal: " + ui.getInternals().hasModalComponent()));
             wire.answerLater();
             MockVaadin.clientRoundtrip();
