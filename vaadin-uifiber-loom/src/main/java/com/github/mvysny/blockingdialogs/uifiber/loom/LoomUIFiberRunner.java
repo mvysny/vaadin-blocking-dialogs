@@ -19,7 +19,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -193,18 +192,6 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
      */
     private static final class SessionCarrier implements Executor {
         /**
-         * Legitimate nesting is one virtual thread unparking another from inside its own continuation,
-         * which stays shallow. A continuation that feeds itself back in recurses until the stack dies,
-         * so anything in between makes a fine tripwire.
-         */
-        private static final int MAX_NESTED_SUBMITS = 64;
-
-        /**
-         * How deep {@link #execute} has re-entered itself on the current thread.
-         */
-        private static final ThreadLocal<int[]> nestedSubmits = ThreadLocal.withInitial(() -> new int[1]);
-
-        /**
          * The carrier of the UI fiber running on the current thread.
          */
         private static final ThreadLocal<SessionCarrier> current = new ThreadLocal<>();
@@ -260,14 +247,6 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
          * start, as {@link Thread#start()} submits on the starting thread, which holds the lock; or
          * hands it to the carrier still holding the lock, for an unmount other than a park. Called on
          * whichever thread starts or unparks the UI fiber.
-         *
-         * @throws RejectedExecutionException if submits nest {@code MAX_NESTED_SUBMITS} deep on this
-         *                                    thread: a continuation is feeding itself back in, and would
-         *                                    otherwise recurse until {@link StackOverflowError}. That
-         *                                    strands the UI fiber for good - the JDK moved it out of
-         *                                    {@code PARKED} before calling us, so no later unpark
-         *                                    resubmits it - but a stranded UI fiber can't restart the
-         *                                    runaway either.
          */
         @Override
         public void execute(Runnable continuation) {
@@ -280,19 +259,7 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
                 handoff.offer(continuation);
                 return;
             }
-            final int[] depth = nestedSubmits.get();
-            if (depth[0] >= MAX_NESTED_SUBMITS) {
-                throw new RejectedExecutionException("Continuation submits are " + MAX_NESTED_SUBMITS
-                        + " deep on " + Thread.currentThread() + ": a virtual thread is most likely waiting for"
-                        + " something that the Vaadin UI thread re-releases on every continuation."
-                        + " See https://github.com/mvysny/vaadin-loom/issues/3");
-            }
-            depth[0]++;
-            try {
-                session.access(() -> mount(continuation));
-            } finally {
-                depth[0]--;
-            }
+            session.access(() -> mount(continuation));
         }
 
         /**

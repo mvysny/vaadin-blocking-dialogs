@@ -28,9 +28,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Taking the Vaadin session lock from a UI fiber's virtual thread, which without
- * {@link VirtualThreadAwareLock} recurses until {@link StackOverflowError}: the virtual thread can
- * never win the lock its own carrier holds, and every release resubmits its continuation as an access
- * task, which re-locks and re-releases, forever (vaadin-loom#3).
+ * {@link VirtualThreadAwareLock} deadlocks the session: the virtual thread can never win the lock
+ * its own carrier holds, and the carrier waits for it holding the lock.
  */
 public class VirtualThreadAwareLockTest {
     private static Routes routes;
@@ -187,8 +186,7 @@ public class VirtualThreadAwareLockTest {
     /**
      * A UI fiber that loses its marker is shut out of the session lock its own carrier holds: the
      * carrier waits out the UI fiber's unmount holding the lock ({@code D_loom_holds_the_lock}), so
-     * an untimed {@code lock()} would deadlock the session - the lock-hold watchdog's to report -
-     * rather than recurse into {@link StackOverflowError}.
+     * an untimed {@code lock()} deadlocks the session, for the lock-hold watchdog to report.
      */
     @Test
     public void aUIFiberWithoutItsMarkerIsShutOutOfItsCarriersLock() throws InterruptedException {

@@ -209,8 +209,11 @@ park (`R_vt_unmount_ends_segment`). Ending the access task there would break the
 carrier stays in its access task, holding the lock, for the UI fiber's next continuation. That
 costs a platform thread per IO wait — what a plain listener and Swing's EDT pay; Vaadin's lock is
 thread-owned and the response needs it anyway. Loom's "a park holds no thread" is for waiting on a
-human. Accepted: a UI fiber waiting on what a parked one holds — a row locked across a `confirm()`
-while another tab of the session updates it — deadlocks until the DB's lock timeout, as on
-session-unlock, and as Swing with a `DOCUMENT_MODAL` dialog. Why a WARN watchdog
-(`LOCK_HOLD_WARN_SECONDS`) rather than thread dumps: the JVM sees no Java-level cycle, and the
-stuck line sits on a virtual thread `jstack` omits.
+human. Accepted, two new deadlocks. A UI fiber waiting on what a parked one holds — a row locked
+across a `confirm()` while another tab of the session updates it — waits out the DB's lock
+timeout, as on session-unlock, and as Swing with a `DOCUMENT_MODAL` dialog. A UI fiber waiting on
+a lock its own carrier holds — a listener inside `synchronized (cache)` calling `runUntilPark`, the
+body taking `cache` too — never ends; Swing's EDT would re-enter it, being one thread. The
+session lock is spared: `VirtualThreadAwareLock` makes the UI fiber its carrier's co-owner. Why a
+WARN watchdog (`LOCK_HOLD_WARN_SECONDS`) rather than thread dumps: the JVM sees no Java-level
+cycle, and the stuck line sits on a virtual thread `jstack` omits.

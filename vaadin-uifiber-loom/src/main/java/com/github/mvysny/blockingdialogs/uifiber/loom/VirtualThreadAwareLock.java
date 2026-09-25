@@ -30,9 +30,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * A UI fiber's virtual thread already runs under the session lock - its carrier holds it for the whole
  * access task - yet it can never take that lock itself, because {@link ReentrantLock} keys on
- * {@link Thread} identity and the carrier is a different {@link Thread}. Trying anyway recurses
- * until {@link StackOverflowError}, see
- * <a href="https://github.com/mvysny/vaadin-loom/issues/3">vaadin-loom#3</a>. So on a thread marked
+ * {@link Thread} identity and the carrier is a different {@link Thread}. Trying anyway deadlocks the
+ * session, the carrier waiting for the virtual thread while holding the lock
+ * ({@code R_vt_lock_identity}). So on a thread marked
  * by {@link #enterUIVirtualThread} every operation here is bookkeeping only ("pretend mode"); every
  * other thread gets the real lock.
  *

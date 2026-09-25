@@ -89,9 +89,12 @@ above and cut the fat — a marker already says where a claim came from.
 
 - `ReentrantLock` keys ownership on `Thread` identity, so a virtual thread mounted inside its
   carrier's `UI.access()` sees `isHeldByCurrentThread() == false`. **[src]**
-- Taking that lock from the virtual thread recurses until `StackOverflowError`: every release
-  unparks it, which resubmits its continuation through `ui.access()`, whose `unlock()` releases
-  again. **[verified, vaadin-loom#3]**
+- The virtual thread can never take that lock itself. With a carrier that ends its access task at
+  every unmount, trying recurses until `StackOverflowError`: every release unparks it, which
+  resubmits its continuation through `ui.access()`, whose `unlock()` releases again. **[verified,
+  vaadin-loom#3]**
+- With a carrier that waits out the unmount holding the lock, trying deadlocks the session.
+  **[verified 2026-09-25, JBR 25.0.4 — `VirtualThreadAwareLockTest`]**
 - `hasQueuedThreads()` and friends are `final`, so a delegating wrapper reports an empty queue;
   `VaadinService.isUIActive()` loses the grace period it grants a UI whose lock has waiters. **[src]**
 - The session lock is stored under the attribute `getServiceName() + ".lock"`
