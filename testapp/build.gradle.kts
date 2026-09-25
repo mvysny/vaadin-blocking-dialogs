@@ -10,7 +10,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":vaadin-blocking-dialogs-loom"))
+    implementation(project(":vaadin-uifiber-loom"))
 
     // Vaadin
     implementation(libs.vaadin.core)
@@ -23,7 +23,7 @@ dependencies {
     implementation(libs.slf4j.simple)
 
     // Fast Vaadin unit-testing with Karibu-Testing: https://github.com/mvysny/karibu-testing
-    testImplementation(testFixtures(project(":vaadin-blocking-dialogs-loom")))
+    testImplementation(testFixtures(project(":vaadin-uifiber-loom")))
     testImplementation(libs.karibu.testing)
     testImplementation(libs.junit)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

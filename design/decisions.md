@@ -110,7 +110,7 @@ There a UI fiber parking inside any monitor deadlocks its session for good (`R_v
 JDK-internal monitor included, so no code review rules it out. A warning or a README line is how
 vaadin-loom#2 happened: nobody reads either until the session hangs. So the executor's constructor
 throws, naming JEP 491, and `BlockingExecutor.get()` repeats it on every call — unless
-`-Dblockingdialogs.loom.allowPinningJdk=true`, for shops stuck on 21 LTS that accept the risk. CI's
+`-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`, for shops stuck on 21 LTS that accept the risk. CI's
 JDK 21 job sets it, so the loom tests still run on the floor we compile for. Why not `--release 24`:
 the same protection as a cryptic `UnsupportedClassVersionError`, with no way out. The cost: the gate
 is per JVM, so an app that never parks inside a monitor still has to opt in.

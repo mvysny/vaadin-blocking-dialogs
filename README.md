@@ -15,8 +15,9 @@ such a hard thing to do in a web framework.
 | Artifact | What it is |
 |---|---|
 | `vaadin-blocking-dialogs` | The strategy-neutral API your code is written against. |
-| `vaadin-blocking-dialogs-loom` | The virtual-thread strategy, grown out of the [vaadin-loom](https://github.com/mvysny/vaadin-loom) prototype. |
-| `vaadin-blocking-dialogs-session-unlock` | Planned: parks an ordinary platform thread with the Vaadin session lock released. |
+| `vaadin-uifiber-spi` | The SPI a strategy implements; your code never calls it. |
+| `vaadin-uifiber-loom` | The virtual-thread strategy, grown out of the [vaadin-loom](https://github.com/mvysny/vaadin-loom) prototype. |
+| `vaadin-uifiber-session-unlock` | Planned: parks an ordinary platform thread with the Vaadin session lock released. |
 
 Group id: `com.github.mvysny.vaadin-blocking-dialogs`. The `testapp` module is a demo, not published.
 
@@ -46,7 +47,7 @@ The loom strategy additionally needs:
   inside a `synchronized` block deadlocks the session - see
   [JEP 491](https://openjdk.org/jeps/491) and [vaadin-loom#2](https://github.com/mvysny/vaadin-loom/issues/2) -
   so the strategy refuses to start there, unless you accept the risk with
-  `-Dblockingdialogs.loom.allowPinningJdk=true`.
+  `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`.
 - **`--add-opens java.base/java.lang=ALL-UNNAMED`** on the JVM: the strategy reflects into the JDK
   to run virtual threads on Vaadin's UI "thread" ([JDK-8308541](https://bugs.openjdk.org/browse/JDK-8308541)).
 - **HTTP requests served by platform threads**, not virtual ones - with Vaadin Boot,

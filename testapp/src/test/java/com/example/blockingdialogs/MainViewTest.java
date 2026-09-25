@@ -6,7 +6,7 @@
  */
 package com.example.blockingdialogs;
 
-import com.github.mvysny.blockingdialogs.loom.MockVirtualThreadAwareServlet;
+import com.github.mvysny.blockingdialogs.uifiber.loom.MockVirtualThreadAwareServlet;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
 import com.github.mvysny.kaributesting.v10.Routes;
 import com.github.mvysny.kaributesting.v10.mock.MockedUI;

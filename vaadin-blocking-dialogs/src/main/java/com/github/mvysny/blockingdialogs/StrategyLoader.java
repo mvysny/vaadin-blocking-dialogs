@@ -60,7 +60,7 @@ final class StrategyLoader {
         }
         if (found.isEmpty()) {
             return new Result(null, "No blocking strategy on the classpath: add one, such as"
-                    + " vaadin-blocking-dialogs-loom", null);
+                    + " vaadin-uifiber-loom", null);
         }
         if (found.size() > 1) {
             return new Result(null, found.size() + " blocking strategies on the classpath, "

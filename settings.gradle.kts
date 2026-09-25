@@ -6,6 +6,7 @@
  */
 include(
     "vaadin-blocking-dialogs",
-    "vaadin-blocking-dialogs-loom",
+    "vaadin-uifiber-spi",
+    "vaadin-uifiber-loom",
     "testapp",
 )

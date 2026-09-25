@@ -57,5 +57,5 @@ inside its access task, holding the lock, and waits for that UI fiber's next con
 - `Q_timeout_backstop`: a bare `future.get()` waiting for a click now deadlocks the session, as
   under session-unlock. Keep it a deadlock (loud, and `D_pluggable_strategy` already forbids it),
   or WARN after N seconds with the UI fiber's stack while holding on?
-- `Q_jdk21`: with `-Dblockingdialogs.loom.allowPinningJdk=true`, `synchronized` pins instead of
+- `Q_jdk21`: with `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`, `synchronized` pins instead of
   unmounting. That already holds the lock, so this changes nothing there.

@@ -2,7 +2,7 @@
 
 Ported from SB-Emulators' `ideas/blocking-strategy-manual-session-unlock.md` (probed on Vaadin
 25.2.6 / JDK 25, 2026-09-01). There it was a knob inside one app; here it becomes the
-`vaadin-blocking-dialogs-session-unlock` module, a second implementation of the common API
+`vaadin-uifiber-session-unlock` module, a second implementation of the common API
 (`D_pluggable_strategy`; the API is `BlockingExecutor`, the shared half `StrategySupport`). The measured Vaadin behaviour has
 already moved to `design/research.md` — `R_unlock_pushes`, `R_async_push_no_response`; this file
 keeps only the design, which is not done yet.

@@ -6,7 +6,7 @@
  */
 package com.example.blockingdialogs;
 
-import com.github.mvysny.blockingdialogs.loom.LoomVaadinServlet;
+import com.github.mvysny.blockingdialogs.uifiber.loom.LoomVaadinServlet;
 import jakarta.servlet.annotation.WebServlet;
 
 @WebServlet(urlPatterns = "/*", asyncSupported = true)

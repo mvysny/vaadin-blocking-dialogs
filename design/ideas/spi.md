@@ -4,9 +4,9 @@ Today `BlockingExecutor` is both the SPI a strategy implements and, through `Blo
 static delegates, the API an app calls; `StrategySupport` is the strategy-neutral half every
 strategy must remember to call. Split the audiences:
 
-- **`vaadin-fibers-spi`** (name open, `Q_module_names`) — a new Gradle subproject holding only the
-  SPI type, `…spi.UIFiberRunnerSpi` (`Q_spi_name`). Minimal surface, exhaustive javadoc: every
-  precondition, every guarantee, every non-guarantee. No app calls it, ever.
+- **`vaadin-uifiber-spi`** (`Q_module_names`) — a Gradle subproject holding only the SPI type,
+  `…blockingdialogs.uifiber.spi.UIFiberRunnerSpi` (`Q_spi_name`), and its `Completable`. Minimal
+  surface, exhaustive javadoc: every precondition, every guarantee, every non-guarantee. No app calls it, ever.
 - **`vaadin-blocking-dialogs`** — the app-facing API, built on the SPI. The low-level primitives
   (`runLater`, `runUntilPark`, `parkAndAwait`, `accessSynchronously`, …) in one class, the helpers
   (`showAndAwait`) in `BlockingDialogs`; no method exists twice. Everything strategy-neutral that
@@ -16,11 +16,13 @@ strategy must remember to call. Split the audiences:
 - **Strategies** depend on the SPI module only. Loom never sees `StrategySupport`, nor the API.
 
 ```
-app ──► vaadin-blocking-dialogs ──► vaadin-fibers-spi ◄── vaadin-blocking-dialogs-loom
-                                                     ◄── …-session-unlock
+app ──► vaadin-blocking-dialogs ──► vaadin-uifiber-spi ◄── vaadin-uifiber-loom
+                                                      ◄── vaadin-uifiber-session-unlock
 ```
 
-**Where the brainstorm stands** (paused 2026-09-24):
+**Where it stands** (2026-09-25): `vaadin-uifiber-spi` exists, the interfaces with their javadoc
+— the contract's home now, over the sketch below. Nothing uses it yet: the API and loom still speak
+`BlockingExecutor`. The loom module is renamed `vaadin-uifiber-loom`, package `…blockingdialogs.uifiber.loom`.
 
 - Settled:
   - the three-layer split above; the strategy owns `park()`, so it can fiddle with the locks;
@@ -36,11 +38,12 @@ app ──► vaadin-blocking-dialogs ──► vaadin-fibers-spi ◄── vaad
     is cancelled too — `Q_future_cancel`) and the app's future failing; a user's Cancel is an answer;
   - `runUntilFirstPark` takes no `Completable` (`Q_completable_param`); Hacky is rejected;
   - the SPI type is `UIFiberRunnerSpi`, its implementations `LoomUIFiberRunner` and the like
-    (`Q_spi_name`).
+    (`Q_spi_name`);
+  - the modules are `vaadin-uifiber-spi`, `vaadin-uifiber-loom`, … (`Q_module_names`).
 - Postponed by Martin: the probe of the raw-lock release for background threads.
 - Next, the two that shape the SPI contract: `Q_settle_woken`, `Q_nested_run_later`. Then
-  `Q_run_later_derived`, `Q_wrapping`, `Q_epilogue_hook`; the module names (`Q_module_names`), the
-  app-facing class name, and the prose rename "strategy" → "runner".
+  `Q_run_later_derived`, `Q_wrapping`, `Q_epilogue_hook`; the app-facing class name, and the prose
+  rename "strategy" → "runner". Then port loom onto the SPI and rebuild the API on it.
 
 Graduates when the modules land: the founding reasoning to a `D_` (it rewrites
 `D_pluggable_strategy`'s cost paragraph and `D_spi_exactly_one`), the layering to the AGENTS.md
@@ -280,8 +283,11 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
 
   And the app-facing primitives class: with the SPI lookup behind it, it holds only statics —
   `UIFibers.runLater(() -> …)` reads well and drops the `BlockingExecutor.get().` prefix.
-- **`Q_module_names`** — `vaadin-fibers-spi` vs `vaadin-blocking-dialogs-spi` (matches the other
-  artifactIds and the `configureMavenCentral` rule); package `…blockingdialogs.spi` either way?
+- **`Q_module_names`** — settled with Martin: **`vaadin-uifiber-spi`**, the runners
+  `vaadin-uifiber-<name>` (`vaadin-uifiber-loom`) — the fiber layer is not about dialogs, so only
+  the API module keeps the `blocking-dialogs` name. The packages stay under the project's
+  `com.github.mvysny.blockingdialogs`, as `….uifiber.<name>`: the repo is
+  `mvysny/vaadin-blocking-dialogs`.
 - **`Q_run_later_derived`** — two cracks in `runLater == access(runUntilPark)`:
   - loom on a *virtual* drainer (a virtual request thread, a background virtual thread's
     `ui.access`) can't mount, so its `runUntilFirstPark` must fall back to today's handoff and return

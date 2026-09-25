@@ -32,14 +32,15 @@ Every fact lives in exactly one of these; the others link to it.
 - **Every app and test serving a blocking dialog has `@Push`.** Without it the dialog never reaches the browser while the code is blocked; see `R_unlock_pushes`.
 - **Loom: HTTP requests are served by platform threads.** A continuation can't mount on a virtual one (`R_vt_scheduler`), so the UI fiber's first segment is handed off past the request, losing input exclusion (`D_input_exclusion`).
 - **Loom: every `VaadinService` routes `getSessionLock()` through `VirtualThreadAwareLock.wrap()`** — the testapp's servlet extends `LoomVaadinServlet`, Karibu tests use `MockVirtualThreadAwareServlet`. Without it a UI virtual thread taking the session lock recurses into `StackOverflowError`; see `R_vt_lock_identity`.
-- **Loom: CI's JDK 21 job passes `-Dblockingdialogs.loom.allowPinningJdk=true`**, which the root build forwards to every test JVM; without it the strategy refuses to start there (`D_loom_jdk_gate`).
+- **Loom: CI's JDK 21 job passes `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`**, which the root build forwards to every test JVM; without it the strategy refuses to start there (`D_loom_jdk_gate`).
 - **Loom: every JVM running it has `--add-opens java.base/java.lang=ALL-UNNAMED`** — tests, `:testapp:run`, the distribution. The scheduler reflection fails without it; see `R_vt_scheduler`.
 - **Loom: a test that parks inside `synchronized` stays `@EnabledForJreRange(minVersion = 24)` while CI runs JDK 21.** On 21-23 it does not fail, it hangs the test JVM; see `R_vt_pinning`.
 
 ## Module map
 
 - `vaadin-blocking-dialogs` — the strategy-neutral API app code is written against; published.
-- `vaadin-blocking-dialogs-loom` — the virtual-thread strategy, ported from `../vaadin-loom`; published. Its test fixtures (`MockVirtualThreadAwareServlet`) are not.
+- `vaadin-uifiber-spi` — `UIFiberRunnerSpi`, what a strategy implements and no app calls; published. Nothing uses it yet: the API and loom still speak `BlockingExecutor` until `design/ideas/spi.md` lands.
+- `vaadin-uifiber-loom` — the virtual-thread strategy, ported from `../vaadin-loom`; published. Its test fixtures (`MockVirtualThreadAwareServlet`) are not.
 - `testapp` — Vaadin Boot demo on the loom strategy, one app per strategy since a classpath holds one (`D_spi_exactly_one`); never published.
 
 ## Conventions
@@ -49,7 +50,7 @@ Every fact lives in exactly one of these; the others link to it.
 - **Tests: JUnit Jupiter + Karibu-Testing through the Java `LocatorJ` API**, in-JVM without a browser; no mocking library.
 - **Nullability is annotated** with JetBrains `@NotNull` / `@Nullable` on every public parameter and return value.
 - **Dependency versions live in `gradle/libs.versions.toml`**, never in a module's `build.gradle.kts`.
-- **A published module calls `configureMavenCentral("<artifactId>")`**; the artifactId is its directory name, the package `com.github.mvysny.blockingdialogs[.<strategy>]`.
+- **A published module calls `configureMavenCentral("<artifactId>")`**; the artifactId is its directory name, the package `com.github.mvysny.blockingdialogs` for `vaadin-blocking-dialogs`, `com.github.mvysny.blockingdialogs.uifiber.<x>` for `vaadin-uifiber-<x>`.
 - **Every source and build file opens with the MIT header, `Copyright 2026 Martin Vysny`** — code ported from vaadin-loom included, its `Vaadin Ltd.` header replaced; copy it from `build.gradle.kts`.
 - **The unit a strategy runs is a *UI fiber*, never a "block"**, in prose and identifiers (`isInUIFiber`); the `Runnable` handed in is its `body`. See `D_ui_fiber`.
 - **Pre-1.0: break APIs freely.**
@@ -57,7 +58,7 @@ Every fact lives in exactly one of these; the others link to it.
 ## Commands
 
 - `./gradlew` — clean + build (the default tasks): every module's tests and `design/verify_design_tripwires.sh`. CI runs it on push and PR in production mode, JDK 21 and 25 × Oracle, Corretto, Temurin, plus the tripwire as a job of its own (`.github/workflows/gradle.yml`).
-- `./gradlew :vaadin-blocking-dialogs-loom:test --tests "*SomeTest"` — one test class by pattern.
+- `./gradlew :vaadin-uifiber-loom:test --tests "*SomeTest"` — one test class by pattern.
 - `./gradlew :testapp:run` — the demo in embedded Jetty, http://localhost:8080.
 - `./gradlew clean build publish closeAndReleaseStagingRepositories` — release to Maven Central; the full steps are in `CONTRIBUTING.md`.
 
