@@ -1,8 +1,8 @@
 /*
  * Copyright 2026 Martin Vysny
  *
- * Licensed under the MIT License. See the LICENSE file in the project root
- * for the full license text.
+ * Licensed under the Apache License, Version 2.0. See the LICENSE file in the
+ * project root for the full license text.
  */
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
@@ -91,8 +91,8 @@ subprojects {
                         url = "https://github.com/mvysny/vaadin-blocking-dialogs"
                         licenses {
                             license {
-                                name = "The MIT License (MIT)"
-                                url = "https://opensource.org/licenses/MIT"
+                                name = "The Apache License, Version 2.0"
+                                url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
                                 distribution = "repo"
                             }
                         }

@@ -136,4 +136,4 @@ idea; the loom runner follows the [vaadin.com blog post](https://vaadin.com/blog
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [Apache License, Version 2.0](LICENSE).
