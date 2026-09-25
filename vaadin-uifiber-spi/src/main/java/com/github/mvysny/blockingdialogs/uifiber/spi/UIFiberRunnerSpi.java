@@ -27,6 +27,12 @@ import com.vaadin.flow.server.VaadinSession;
  * on IO, a bare {@code Future.get()} or {@code Thread.sleep()} keeps the lock, and the session waits
  * with it. The "first park" is thus the first {@code park()}, never an IO wait.
  * <p>
+ * <b>The thread.</b> A UI fiber runs on one thread from start to end: {@code Thread.currentThread()}
+ * is the same after every {@code park()}, so the thread-locals {@code body} sets survive it -
+ * {@code UI.getCurrent()} included. Which thread is the runner's choice - a new virtual thread, a
+ * worker, the caller's own - and not necessarily the fiber's alone: a runner may run another fiber
+ * on it inside a {@code park()}, provided that fiber ends before the park returns.
+ * <p>
  * <b>Not the runner's job</b> - the API does it around these calls: the {@code body} it hands in
  * sets {@code UI.getCurrent()} and {@code VaadinSession.getCurrent()} itself, marks itself as a UI
  * fiber, and routes whatever it throws to the session's {@code ErrorHandler}. The API also watches
@@ -45,8 +51,8 @@ public interface UIFiberRunnerSpi {
      * one response. On return the caller holds the lock again, with the hold count it called with;
      * a fiber that parked continues, once woken, on the runner's own thread - never the caller's.
      *
-     * @apiNote The thread the first segment runs on is not promised - the caller's under one runner,
-     * a worker under another - so {@code body} can't rely on the caller's thread-locals.
+     * @apiNote {@code body} may run on another thread than the caller's, so it can't rely on the
+     * caller's thread-locals; its own survive every park, as the class doc's "The thread" promises.
      * @param session the fiber's session, whose lock it holds; not a UI, since the fiber follows its
      *                anchor to a new UI on a refresh.
      * @param body    the fiber's code; throws nothing.

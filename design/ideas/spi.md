@@ -39,7 +39,19 @@ app ──► vaadin-blocking-dialogs ──► vaadin-uifiber-spi ◄── vaa
   - `runUntilFirstPark` takes no `Completable` (`Q_completable_param`); Hacky is rejected;
   - the SPI type is `UIFiberRunnerSpi`, its implementations `LoomUIFiberRunner` and the like
     (`Q_spi_name`);
-  - the modules are `vaadin-uifiber-spi`, `vaadin-uifiber-loom`, … (`Q_module_names`).
+  - the modules are `vaadin-uifiber-spi`, `vaadin-uifiber-loom`, … (`Q_module_names`);
+  - **a fiber keeps one thread**: `Thread.currentThread()` is the same from `body`'s start to its
+    end, across every park, so its thread-locals survive a dialog — `CurrentInstance`, the in-fiber
+    flag, the app's MDC or transaction context. Which thread is the runner's, never promised to be
+    the caller's, nor the fiber's alone: a runner may nest another fiber inside a `park()` if it
+    ends before the park returns, as the scripted one does. Rules out a runner mounting a raw
+    `Continuation` on any free carrier — it would strand `UI.getCurrent()` anyway. The app-facing
+    half ("code after `confirm()` sees the thread-locals it saw before") goes into `BlockingDialogs`'
+    docs with the API rebuild;
+  - `isInUIFiber` stays the API's own `ThreadLocal`, sound by the rule above. Rejected: an SPI
+    `isUIFiberThread()` — a runner's "one of my threads" is broader than "inside `body`" (the
+    wrapper's error path, an idle worker), the scripted runner would only copy the API's flag, and
+    every SPI method is one more thing a runner can get subtly different.
 - Postponed by Martin: the probe of the raw-lock release for background threads.
 - Next, the two that shape the SPI contract: `Q_settle_woken`, `Q_nested_run_later`. Then
   `Q_run_later_derived`, `Q_wrapping`, `Q_epilogue_hook`; the app-facing class name, and the prose
