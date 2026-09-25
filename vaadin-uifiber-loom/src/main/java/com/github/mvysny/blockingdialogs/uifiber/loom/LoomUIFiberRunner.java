@@ -32,7 +32,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * Registered in {@code META-INF/services}; app code calls {@code vaadin-blocking-dialogs}. The app must
  * <ul>
  *     <li>serve itself from a {@link LoomVaadinServlet}, or install {@link VirtualThreadAwareLock}
- *     itself - checked by every {@link #runUntilFirstPark};</li>
+ *     itself - checked at session init by {@link SessionLockCheck}, and by every
+ *     {@link #runUntilFirstPark};</li>
  *     <li>run on Java 24+ ({@link #ALLOW_PINNING_JDK} overrides that, checked at startup), with
  *     {@code --add-opens java.base/java.lang=ALL-UNNAMED};</li>
  *     <li>serve HTTP requests from platform threads - with Vaadin Boot,

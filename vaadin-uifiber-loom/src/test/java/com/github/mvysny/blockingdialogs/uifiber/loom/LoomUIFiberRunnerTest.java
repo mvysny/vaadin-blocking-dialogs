@@ -92,12 +92,18 @@ public class LoomUIFiberRunnerTest {
             assertEquals(List.of(LoomUIFiberRunner.class), found.stream().map(Object::getClass).toList());
         }
 
+        /**
+         * {@link SessionLockCheck}: the first session fails, before any UI fiber.
+         */
         @Test
-        public void refusesAnUnwrappedSessionLock() {
+        public void refusesAnUnwrappedSessionLockAtSessionInit() {
             MockVaadin.tearDown();
-            MockVaadin.setup(routes);
-            final IllegalStateException e = assertThrows(IllegalStateException.class, () -> UIFibers.runUntilPark(() -> {}));
-            assertTrue(e.getMessage().contains("LoomVaadinServlet"), e.getMessage());
+            final Throwable e = assertThrows(Throwable.class, () -> MockVaadin.setup(routes));
+            final StringBuilder messages = new StringBuilder();
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                messages.append(t.getMessage()).append('\n');
+            }
+            assertTrue(messages.toString().contains("LoomVaadinServlet"), messages.toString());
         }
 
         @Test
