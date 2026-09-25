@@ -75,7 +75,10 @@ strategy**), whose request owes the first-park wait of `D_input_exclusion` anywa
 `runUntilPark` runs it inline, parks included. A different promise, a different name, as
 `UI.accessSynchronously` beside `UI.access`. Why loom mounts the first segment on the caller
 (`R_vt_scheduler`) rather than drain: a drain also runs the access tasks queued earlier; and a
-virtual caller, which can't mount it, throws rather than return early. Why exceptions go to the
+virtual caller, which can't mount it, throws rather than return early. Why not run the UI fiber on
+the request thread itself, released at each park: the answering click would wait in the browser for
+the parked request's response (`R_async_push_no_response`), the call could return only at the
+fiber's end, and under Karibu no thread is left to click OK. Why exceptions go to the
 `ErrorHandler`, inline too: the later segments have no caller to throw to, and a UI fiber behaves the
 same wherever it was started from.
 
@@ -125,3 +128,44 @@ thread" suggests a `java.lang.Thread` per unit, which is loom's shape but not th
 yields only where it chooses — here, at a park - which holds whether a virtual or a platform thread
 backs it; "UI" in front keeps it from reading as Loom's own virtual thread. So always "UI fiber",
 in identifiers too (`checkInUIFiber`), and the code handed in is its `body`.
+
+## D_runner_owns_park — Why does the runner make the thing a UI fiber parks on, rather than the fiber parking on the app's `Future`?
+
+A park is where the session lock is released, and releasing it is the runner's craft: loom
+unmounts; a platform-thread runner `await()`s a `Condition` of the session's lock, which releases
+every hold without a drain or a push (`R_unlock_pushes`) — hold counting for free. So
+`UIFiberRunnerSpi.newCompletable` hands out a `Completable` the runner implements, and every
+`Completable.park()` releases the lock while nothing else does: IO, a bare `future.get()` and a
+`Thread.sleep()` keep it (`R_vt_unmount_releases_lock`). That also makes the first park, where
+`runUntilFirstPark` returns, a real one and never an IO wait. Why not a `CompletableFuture`: its
+async callbacks run on arbitrary threads, and `cancel()` / `obtrudeValue()` are wake-ups the runner
+never sees. Why not one designated releasing `Completable` per fiber: a fiber parks many times — a
+confirm, then a second dialog — and a second park holding the lock would shut out its own
+answering click. The cost: a bare park waiting for the user freezes the session, loudly and under
+every runner alike (**One API, any strategy**).
+
+## D_wake_is_access_task — Why does a woken UI fiber settle in the session's drain, rather than before the waking call returns?
+
+`Completable.complete()` queues the woken fiber as an access task of its session, so it runs to its
+next park or end in the drain before the lock is really released (`R_unlock_pushes`): after the
+waking listener, before any UIDL and before the next request. That is Swing's promise exactly — a
+modal's caller runs after the OK listener returns, before the next event. The drain loops until
+the queue is empty, so a cascade — A wakes B, B wakes C — settles in one go; and every wake counts
+without a race, since `complete()` holds the lock and a background thread's lands through
+`session.access`. For that every real release of the lock drains first, a later `park()` included;
+only the first park inside `runUntilFirstPark` leaves it to the caller's own unlock. Why not an SPI
+call that settles every woken fiber before returning: stronger than Swing, but every waker must
+remember to call it, a plain listener calling `complete()` included. Why not a scope collecting
+what a call woke: whether a wake from another thread belongs to it is a race. The cost: a test
+asserting straight after `_click` still needs a roundtrip.
+
+## D_in_fiber_flag — Why does the API itself track whether code runs in a UI fiber, rather than ask the runner?
+
+The answer decides whether a call may park, runs inline or would deadlock, and the API gets it
+exact by construction: a thread-local its wrapper sets around `body`, whatever the runner. A
+runner's own answer, "one of my threads", is broader — the wrapper's error path, an idle worker
+between two fibers — and the scripted test runner, which runs `body` on the caller's thread, would
+only keep a copy of the flag. So the SPI promises instead that a fiber keeps one thread from start
+to end, which the `CurrentInstance`s need anyway. The cost: that promise rules out a runner mounting
+a raw `Continuation` on whichever carrier is free — which would strand `UI.getCurrent()` on the old
+carrier anyway.
