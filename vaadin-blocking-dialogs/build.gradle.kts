@@ -34,5 +34,5 @@ tasks.withType<Test> {
 }
 
 @Suppress("UNCHECKED_CAST")
-val configureMavenCentral = ext["configureMavenCentral"] as (artifactId: String) -> Unit
-configureMavenCentral("vaadin-blocking-dialogs")
+val configureMavenCentral = ext["configureMavenCentral"] as (artifactId: String, description: String) -> Unit
+configureMavenCentral("vaadin-blocking-dialogs", "Vaadin Blocking Dialogs: the runner-neutral API, a dialog call that blocks until the user answers")

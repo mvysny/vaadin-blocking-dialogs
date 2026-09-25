@@ -61,7 +61,7 @@ subprojects {
     }
 
     // creates a reusable function which configures proper deployment to Maven Central
-    ext["configureMavenCentral"] = { artifactId: String ->
+    ext["configureMavenCentral"] = { artifactId: String, description: String ->
 
         java {
             withJavadocJar()
@@ -86,7 +86,7 @@ subprojects {
                     this.artifactId = artifactId
                     version = project.version.toString()
                     pom {
-                        description = "Vaadin Blocking Dialogs: a dialog call that blocks until the user answers"
+                        this.description = description
                         name = artifactId
                         url = "https://github.com/mvysny/vaadin-blocking-dialogs"
                         licenses {

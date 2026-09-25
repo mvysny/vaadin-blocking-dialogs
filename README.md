@@ -21,6 +21,34 @@ such a hard thing to do in a web framework.
 
 Group id: `com.github.mvysny.vaadin-blocking-dialogs`. The `testapp` module is a demo, not published.
 
+## Installation
+
+Add the API and exactly one runner to your app, e.g. with Gradle:
+
+```kotlin
+dependencies {
+    implementation("com.github.mvysny.vaadin-blocking-dialogs:vaadin-blocking-dialogs:0.1")
+    implementation("com.github.mvysny.vaadin-blocking-dialogs:vaadin-uifiber-loom:0.1")
+}
+```
+
+or Maven:
+
+```xml
+<dependency>
+    <groupId>com.github.mvysny.vaadin-blocking-dialogs</groupId>
+    <artifactId>vaadin-blocking-dialogs</artifactId>
+    <version>0.1</version>
+</dependency>
+<dependency>
+    <groupId>com.github.mvysny.vaadin-blocking-dialogs</groupId>
+    <artifactId>vaadin-uifiber-loom</artifactId>
+    <version>0.1</version>
+</dependency>
+```
+
+Your app brings its own Vaadin; the library doesn't pull one in.
+
 ## Requirements
 
 Every runner needs `@Push` on your `AppShellConfigurator`: the dialog travels to the browser while

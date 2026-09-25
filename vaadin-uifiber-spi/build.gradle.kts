@@ -17,5 +17,5 @@ dependencies {
 }
 
 @Suppress("UNCHECKED_CAST")
-val configureMavenCentral = ext["configureMavenCentral"] as (artifactId: String) -> Unit
-configureMavenCentral("vaadin-uifiber-spi")
+val configureMavenCentral = ext["configureMavenCentral"] as (artifactId: String, description: String) -> Unit
+configureMavenCentral("vaadin-uifiber-spi", "Vaadin Blocking Dialogs: the SPI a UI fiber runner implements")

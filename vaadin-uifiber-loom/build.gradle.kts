@@ -35,8 +35,8 @@ tasks.withType<Test> {
 }
 
 @Suppress("UNCHECKED_CAST")
-val configureMavenCentral = ext["configureMavenCentral"] as (artifactId: String) -> Unit
-configureMavenCentral("vaadin-uifiber-loom")
+val configureMavenCentral = ext["configureMavenCentral"] as (artifactId: String, description: String) -> Unit
+configureMavenCentral("vaadin-uifiber-loom", "Vaadin Blocking Dialogs: the virtual-thread UI fiber runner")
 
 // the test fixtures are for this repo's own tests; don't publish them to Maven Central
 val javaComponent = components["java"] as AdhocComponentWithVariants
