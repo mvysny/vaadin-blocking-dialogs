@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,9 +28,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Taking the Vaadin session lock from a UI fiber's virtual thread, which without
- * {@link VirtualThreadAwareLock} recurses until {@link StackOverflowError}: the virtual thread can
- * never win the lock its own carrier holds, and every release resubmits its continuation as an access
- * task, which re-locks and re-releases, forever (vaadin-loom#3).
+ * {@link VirtualThreadAwareLock} deadlocks the session: the virtual thread can never win the lock
+ * its own carrier holds, and the carrier waits for it holding the lock.
  */
 public class VirtualThreadAwareLockTest {
     private static Routes routes;
@@ -186,32 +184,25 @@ public class VirtualThreadAwareLockTest {
     }
 
     /**
-     * A UI fiber that loses its marker is back to spinning on the session lock its own carrier holds.
-     * The depth guard in the carrier must cut that short instead of letting it reach
-     * {@link StackOverflowError}.
+     * A UI fiber that loses its marker is shut out of the session lock its own carrier holds: the
+     * carrier waits out the UI fiber's unmount holding the lock ({@code D_loom_holds_the_lock}), so
+     * an untimed {@code lock()} deadlocks the session, for the lock-hold watchdog to report.
      */
     @Test
-    public void runawayContinuationIsRejectedRatherThanOverflowingTheStack() {
+    public void aUIFiberWithoutItsMarkerIsShutOutOfItsCarriersLock() throws InterruptedException {
         final VaadinSession session = VaadinSession.getCurrent();
+        final AtomicReference<Boolean> gotTheLock = new AtomicReference<>();
         UIFibers.runLater(() -> {
             VirtualThreadAwareLock.exitUIVirtualThread();
-            session.lock();
+            try {
+                gotTheLock.set(session.getLockInstance().tryLock(300, TimeUnit.MILLISECONDS));
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
         });
-
-        // Not MockVaadin.clientRoundtrip(): its finally block replaces whatever unlock() throws
-        // with an assertion about the session lock. unlock() is what drains the UI queue anyway.
-        final RejectedExecutionException ex = assertThrows(RejectedExecutionException.class, session::unlock);
-        assertTrue(ex.getMessage().contains("deep on"), ex.getMessage());
-
-        // Without the guard this is what the developer gets instead: FutureTask captures the
-        // StackOverflowError off the continuation and the session error handler reports it, ~1000
-        // frames of the same eight-frame cycle and no hint of the cause.
+        MockVaadin.clientRoundtrip();
+        assertEquals(false, gotTheLock.get());
         assertEquals(List.of(), reportedErrors);
-
-        // The session survived: the runaway was cut before it could take the stack with it. The
-        // UI fiber stays stranded, but a stranded virtual thread is never resubmitted, so it can't
-        // restart the runaway either.
-        assertTrue(session.getLockInstance().tryLock(), "the session lock must still be usable");
     }
 
     /**

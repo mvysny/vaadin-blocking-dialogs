@@ -19,7 +19,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -27,7 +26,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * tasks, so the carrier holds the session lock while the UI fiber is mounted. A park is a
  * {@link CompletableFuture#get()}: the virtual thread unmounts, the access task ends, and the lock's
  * release pushes the dialog to the browser; completing it queues the next continuation as another
- * access task.
+ * access task. IO, {@code sleep} and contended locks hold the carrier and the lock, as on a platform
+ * thread; only {@code park()} frees both - the SPI's "The lock".
  * <p>
  * Registered in {@code META-INF/services}; app code calls {@code vaadin-blocking-dialogs}. The app must
  * <ul>
@@ -41,10 +41,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *     container: there a platform thread carries each segment of a UI fiber while the request
  *     thread waits.</li>
  * </ul>
- *
- * @apiNote Breaks the SPI's "only {@code park()} releases the lock": a UI fiber blocked on IO
- * unmounts too, and its carrier's access task ends there, releasing the lock like a park -
- * {@code runUntilFirstPark} returning at it included.
+ * A UI fiber holding the lock outside {@code park()} for long WARNs with its stack, which
+ * {@code jstack} doesn't show; see {@link #LOCK_HOLD_WARN_SECONDS}.
  * <p>
  * Thread-safe, and stateless app-wide.
  */
@@ -54,6 +52,14 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
      * {@code synchronized} deadlocks its session - for apps stuck on 21 LTS that accept the risk.
      */
     public static final String ALLOW_PINNING_JDK = "blockingdialogs.uifiber.loom.allowPinningJdk";
+
+    /**
+     * The system property with the seconds a UI fiber may hold the session lock outside
+     * {@code park()} - on IO, {@code sleep}, a lock - before a WARN with its stack, repeated at 3x, 9x
+     * that and so on; 10 by default, 0 disables. A long query WARNs too, rightly: it freezes the
+     * session.
+     */
+    public static final String LOCK_HOLD_WARN_SECONDS = "blockingdialogs.uifiber.loom.lockHoldWarnSeconds";
 
     /**
      * Numbers the UI fibers' virtual threads: the runner never sees a UI to name them after.
@@ -103,14 +109,14 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
         }
         final VirtualThreadAwareLock lock = VirtualThreadAwareLock.asVirtualThreadAware(session.getLockInstance());
         final String name = "blocking-dialogs-ui-fiber-" + fiberCount.incrementAndGet();
-        LoomUtils.newVirtualThread(new SessionCarrier(session), name, () -> {
+        new SessionCarrier(session, name, () -> {
             VirtualThreadAwareLock.enterUIVirtualThread(lock);
             try {
                 body.run();
             } finally {
                 VirtualThreadAwareLock.exitUIVirtualThread();
             }
-        }).start();
+        }).fiber.start();
     }
 
     @Override
@@ -119,7 +125,7 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
             throw new IllegalStateException(Thread.currentThread() + " isn't a running UI fiber of " + session
                     + ", so it can't park");
         }
-        return new WakeUp<>(Thread.currentThread());
+        return new WakeUp<>(SessionCarrier.current());
     }
 
     /**
@@ -130,17 +136,17 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
         private final CompletableFuture<R> future = new CompletableFuture<>();
 
         /**
-         * The UI fiber's virtual thread, the only one allowed to {@link #park()}.
+         * The carrier of the UI fiber, the only one allowed to {@link #park()}.
          */
-        private final Thread fiber;
+        private final SessionCarrier carrier;
 
         /**
-         * Touched by {@link #fiber} only.
+         * Touched by the UI fiber only.
          */
         private boolean parked;
 
-        WakeUp(Thread fiber) {
-            this.fiber = fiber;
+        WakeUp(SessionCarrier carrier) {
+            this.carrier = carrier;
         }
 
         @Override
@@ -159,39 +165,45 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
          */
         @Override
         public @Nullable R park() throws ExecutionException, InterruptedException {
-            if (Thread.currentThread() != fiber) {
-                throw new IllegalStateException(Thread.currentThread() + " can't park on a Completable of " + fiber);
+            if (Thread.currentThread() != carrier.fiber) {
+                throw new IllegalStateException(Thread.currentThread() + " can't park on a Completable of " + carrier.fiber);
             }
             if (parked) {
                 throw new IllegalStateException("This Completable was parked on before");
             }
             parked = true;
+            carrier.releasing = true;
             try {
                 return future.get();
             } catch (CancellationException e) {
                 throw e.getCause() instanceof CancellationException cause ? cause : e;
+            } finally {
+                carrier.releasing = false;
             }
         }
     }
 
     /**
      * Runs a UI fiber's continuations as access tasks of its session - of the session rather than the
-     * UI, since a UI fiber follows its anchor to a new UI on a {@code @PreserveOnRefresh} reload.
+     * UI, since a UI fiber follows its anchor to a new UI on a {@code @PreserveOnRefresh} reload. One
+     * access task carries the UI fiber from one {@code park()} to the next: an unmount for anything
+     * else - IO, {@code sleep}, a contended lock - keeps the task, and so the lock, waiting for the UI
+     * fiber's next continuation (see {@code D_loom_holds_the_lock}).
      */
     private static final class SessionCarrier implements Executor {
         /**
-         * Legitimate nesting is one virtual thread unparking another from inside its own continuation,
-         * which stays shallow. A continuation that feeds itself back in recurses until the stack dies,
-         * so anything in between makes a fine tripwire.
+         * The carrier of the UI fiber running on the current thread.
          */
-        private static final int MAX_NESTED_SUBMITS = 64;
-
-        /**
-         * How deep {@link #execute} has re-entered itself on the current thread.
-         */
-        private static final ThreadLocal<int[]> nestedSubmits = ThreadLocal.withInitial(() -> new int[1]);
+        private static final ThreadLocal<SessionCarrier> current = new ThreadLocal<>();
 
         private final VaadinSession session;
+
+        /**
+         * The UI fiber's virtual thread, unstarted until {@code runUntilFirstPark} starts it.
+         */
+        final Thread fiber;
+
+        private final LockHoldWatchdog handoff;
 
         /**
          * Whether the next submit - the UI fiber's start - mounts on the calling thread instead of being
@@ -200,22 +212,41 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
          */
         private volatile boolean mountHere = true;
 
-        SessionCarrier(VaadinSession session) {
+        /**
+         * Whether the UI fiber is inside {@code park()}, so its next unmount ends the access task and
+         * releases the lock. Written by the UI fiber alone, read by whichever thread resubmits it.
+         */
+        volatile boolean releasing;
+
+        SessionCarrier(VaadinSession session, String name, Runnable body) {
             this.session = session;
+            fiber = LoomUtils.newVirtualThread(this, name, () -> {
+                current.set(this);
+                try {
+                    body.run();
+                } finally {
+                    current.remove();
+                }
+            });
+            handoff = LockHoldWatchdog.of(fiber);
         }
 
         /**
-         * Queues {@code continuation} as an access task - or, for the UI fiber's start, mounts it at
-         * once: {@link Thread#start()} submits on the starting thread, which holds the lock. Called on
+         * @throws IllegalStateException if the calling thread isn't a UI fiber of this runner.
+         */
+        static SessionCarrier current() {
+            final @Nullable SessionCarrier carrier = current.get();
+            if (carrier == null) {
+                throw new IllegalStateException(Thread.currentThread() + " isn't a UI fiber of the loom runner");
+            }
+            return carrier;
+        }
+
+        /**
+         * Queues {@code continuation} as an access task - or mounts it at once for the UI fiber's
+         * start, as {@link Thread#start()} submits on the starting thread, which holds the lock; or
+         * hands it to the carrier still holding the lock, for an unmount other than a park. Called on
          * whichever thread starts or unparks the UI fiber.
-         *
-         * @throws RejectedExecutionException if submits nest {@code MAX_NESTED_SUBMITS} deep on this
-         *                                    thread: a continuation is feeding itself back in, and would
-         *                                    otherwise recurse until {@link StackOverflowError}. That
-         *                                    strands the UI fiber for good - the JDK moved it out of
-         *                                    {@code PARKED} before calling us, so no later unpark
-         *                                    resubmits it - but a stranded UI fiber can't restart the
-         *                                    runaway either.
          */
         @Override
         public void execute(Runnable continuation) {
@@ -224,25 +255,17 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
                 mount(continuation);
                 return;
             }
-            final int[] depth = nestedSubmits.get();
-            if (depth[0] >= MAX_NESTED_SUBMITS) {
-                throw new RejectedExecutionException("Continuation submits are " + MAX_NESTED_SUBMITS
-                        + " deep on " + Thread.currentThread() + ": a virtual thread is most likely waiting for"
-                        + " something that the Vaadin UI thread re-releases on every continuation."
-                        + " See https://github.com/mvysny/vaadin-loom/issues/3");
+            if (!releasing) {
+                handoff.offer(continuation);
+                return;
             }
-            depth[0]++;
-            try {
-                session.access(() -> mount(continuation));
-            } finally {
-                depth[0]--;
-            }
+            session.access(() -> mount(continuation));
         }
 
         /**
-         * Runs {@code continuation} on the thread draining the access queue - whichever thread
-         * releases the session lock last - or on {@code runUntilFirstPark()}'s caller, until the UI
-         * fiber parks or ends. A continuation can't mount on a virtual thread
+         * Runs the UI fiber from {@code continuation} until it parks or ends, on the thread draining
+         * the access queue - whichever thread releases the session lock last - or on
+         * {@code runUntilFirstPark()}'s caller. A continuation can't mount on a virtual thread
          * ({@code WrongThreadException}), so on a virtual drainer - a background virtual thread calling
          * {@code ui.access()}, a virtual request thread - a platform thread carries it while the drainer
          * waits, holding the session lock: the UI fiber still runs before the lock is really released,
@@ -253,9 +276,25 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
          */
         private void mount(Runnable continuation) {
             if (Thread.currentThread().isVirtual()) {
-                awaitUninterruptibly(Handoff.POOL.submit(continuation));
+                awaitUninterruptibly(Handoff.POOL.submit(() -> carry(continuation)));
             } else {
-                continuation.run();
+                carry(continuation);
+            }
+        }
+
+        /**
+         * Runs {@code continuation}, then each next one {@link #handoff} brings, until the UI fiber
+         * parks or ends. A continuation returns at the UI fiber's unmount, its bookkeeping done, so
+         * {@link #releasing} and the fiber's state are settled by then.
+         */
+        private void carry(Runnable continuation) {
+            Runnable next = continuation;
+            while (true) {
+                next.run();
+                if (releasing || fiber.getState() == Thread.State.TERMINATED) {
+                    return;
+                }
+                next = handoff.take();
             }
         }
 
