@@ -73,22 +73,30 @@ pressure; **not needed** = SB-Emulators has no use for it; graduate or keep on i
 
 ## SB-Emulators-side, no library work
 
-Recorded so they aren't mistaken for library asks:
+Recorded so they aren't mistaken for library asks. **Done** on SB-Emulators' `main` line (2026-09-25,
+on 0.1 from Central):
 
-- A dead modal's `WaitDiedException` now escapes `JOptionPane.show*` into migrated code, where a
-  `catch (Exception e)` swallows it and the listener runs on after its session died. SB-Emulators'
-  convention for "a blocking call nobody can answer" is its own `Error` subtype, which a
-  `catch (Exception)` cannot swallow. Convert `WaitDiedException` only, at the `Dialog` seam, and
-  keep it out of the ErrorHandler during teardown.
-- A migrator's bare `future.get()` / `latch.await()` on the EDT now freezes its session, as on the
-  desktop, rather than leaking it at session destroy; the lock-hold watchdog WARNs with its stack
-  (`D_loom_holds_the_lock`). Worth a line in SB-Emulators' migration docs, together with the
-  monitor case under Soon: a modal shown from inside `synchronized` is a hazard there, not on the
-  desktop.
-- SB-Emulators' own rule against a library self-registering a Vaadin service init listener needs
-  an amendment for `SessionLockCheck`, which `D_loom_servlet` keeps for good reasons
-  (`R_service_init_listeners`). Its tests that set up a plain `MockVaadin.setup()` wrap the lock
-  now.
+- A dead wait's `WaitDiedException` becomes SB-Emulators' own `BrowserSessionClosedError` at both of
+  its park seams (the modal dialog and the browser round-trips), so a migrated `catch (Exception e)`
+  can't swallow it; at the fiber's root `callSwing` rethrows the original `WaitDiedException`, so
+  the library ends the fiber quietly. Mutation-checked: without that last step the library logs "A UI
+  fiber failed, and there is no session ErrorHandler" once per dead dialog, since the resumed fiber
+  has no session current any more.
+- The migration docs carry both consequences of `D_loom_holds_the_lock`: a listener that blocks
+  holds the session, as it holds the EDT; and a modal shown inside `synchronized` is now a scanned
+  hazard, with a "decide under the lock, ask outside it" fix.
+- SB-Emulators' own rule against self-registering service init listeners now names `SessionLockCheck`
+  as a dependency's, harmless because idempotent (`R_service_init_listeners`).
+- The docs sweep; and `testapps/crud` + `testapps/jlawyer-shape` driven through Playwright in a real
+  browser — modal confirms and forms, a nested validation modal, F5 with a modal open, a
+  `SwingWorker`'s `done()` modal across an F5. All pass.
+
+**Still open:**
+
+- One regression the real-browser run found, not yet understood and not obviously the library's:
+  every F5 on `testapps/crud` (Spring Boot) logs vaadin-tab-scope's `Invalid state: uis doesn't
+  contain given ui`; the app keeps working. The hunt is SB-Emulators'
+  `ideas/tabscope-f5-double-remove.md`.
 - `Q_foreign_tasks`: could `EHelper.callSwing` drop its access-queue drain after `runUntilPark`?
   The drain settles the modal fiber a click woke before the next event (`D_wake_is_access_task`),
   but it also runs whatever foreign access tasks are queued. Untested.
@@ -104,5 +112,4 @@ Recorded so they aren't mistaken for library asks:
   and whether Karibu's `_click` runs `beforeClientResponse` is unchecked. Also unchecked: whether
   `checkAppOver` may close the session from inside that callback. The library adds no hook for it,
   since Vaadin's is enough.
-- The docs sweep: 47 SB-Emulators files still name `:loom` or its executor.
-- A real-browser run of Sampler's dialog and F5 flows. So far everything is Karibu only.
+- A real-browser run of Sampler's own dialog routes.
