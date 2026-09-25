@@ -27,7 +27,7 @@ tasks.named("check") { dependsOn(verifyDesignTripwires) }
 
 allprojects {
     group = "com.github.mvysny.vaadin-blocking-dialogs"
-    version = "0.1"
+    version = "0.2-SNAPSHOT"
 
     repositories {
         mavenCentral()
