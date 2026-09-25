@@ -51,11 +51,14 @@ app ──► vaadin-blocking-dialogs ──► vaadin-uifiber-spi ◄── vaa
   - `isInUIFiber` stays the API's own `ThreadLocal`, sound by the rule above. Rejected: an SPI
     `isUIFiberThread()` — a runner's "one of my threads" is broader than "inside `body`" (the
     wrapper's error path, an idle worker), the scripted runner would only copy the API's flag, and
-    every SPI method is one more thing a runner can get subtly different.
+    every SPI method is one more thing a runner can get subtly different;
+  - **a wake-up is an access task** (`Q_settle_woken`, `Q_nested_run_later`): a woken fiber runs to
+    its next park or end at the session's next drain, before any UIDL and any other request; every
+    real release of the lock — the caller's unlock, every later park — drains first. Cascades
+    settle in the same drain; `runUntilFirstPark` still returns at its own fiber's first park.
 - Postponed by Martin: the probe of the raw-lock release for background threads.
-- Next, the two that shape the SPI contract: `Q_settle_woken`, `Q_nested_run_later`. Then
-  `Q_run_later_derived`, `Q_wrapping`, `Q_epilogue_hook`; the app-facing class name, and the prose
-  rename "strategy" → "runner". Then port loom onto the SPI and rebuild the API on it.
+- Next: `Q_run_later_derived`, `Q_wrapping`, `Q_epilogue_hook`; the app-facing class name, and the
+  prose rename "strategy" → "runner". Then port loom onto the SPI and rebuild the API on it.
 
 Graduates when the modules land: the founding reasoning to a `D_` (it rewrites
 `D_pluggable_strategy`'s cost paragraph and `D_spi_exactly_one`), the layering to the AGENTS.md
@@ -186,8 +189,8 @@ interface Completable<R> {
   whole hold count through AQS and restores it on wake — the raw release, no drain, no push
   (`R_unlock_pushes`) — so the session-unlock idea's hold counting (`Q_reentrancy` there)
   disappears. `runUntilFirstPark` is the same move one level up: the caller `await()`s a handoff
-  condition, the worker `signal()`s it at its first park. Later parks push first (`ui.push()`
-  before `await()`, the unverified bullet of `R_unlock_pushes`).
+  condition, the worker `signal()`s it at its first park. Later parks drain and push first
+  (`Q_nested_run_later`; `ui.push()` before `await()`, the unverified bullet of `R_unlock_pushes`).
 - **The wake contract is the SPI's own**, not `CompletableFuture`'s — no async callbacks on
   arbitrary threads, no `cancel(mayInterruptIfRunning)`, no `obtrudeValue`.
 - **The strategy sees every park**, which is the registry `session-destroy-ends-bare-parks.md`
@@ -339,19 +342,34 @@ stop depending on `runUntilPark` (`Q_epilogue_hook`).
     WARN after N seconds with the fiber's stack (`Q_timeout_backstop` in the loom-holds idea).
   - Settled with Martin: the parameter is dropped, and the rule goes into the SPI javadoc —
     "every `Completable.park()` releases the lock, nothing else does".
-- **`Q_settle_woken`** — does `runUntilFirstPark` also settle the fibers woken during it
-  (`run-until-park-settles-woken-ui-fibers.md`: SB-Emulators' 40 modal-resume tests need it)? The
-  strategy-owned `Completable` fits: a `complete()` made inside a `runUntilFirstPark` scope knows it,
-  so the strategy can run the woken fiber to its next `park()` or end before returning — loom by
-  mounting its continuation from a scope-local queue, background threads by waiting for the woken
-  worker as for the first one. Put it into the SPI contract now, or leave it to that idea?
+- **`Q_settle_woken`** — the fibers a call wakes (`run-until-park-settles-woken-ui-fibers.md`:
+  SB-Emulators' 40 modal-resume tests need them settled). Settled with Martin: **a wake-up is an
+  access task** — the contract is Vaadin's event loop, not a scope. `complete()` / `fail()` queue
+  the woken fiber on its session; at the next drain, before the lock is really released, it runs to
+  its next `park()` or end — before any UIDL, before any other request. Loom does it already (the
+  continuation is a `session.access` task the drainer mounts); background threads queue a raw
+  handoff to the worker, as `runUntilFirstPark` does.
+  - **Cascades settle in the same drain**: A's segment wakes B, whose task joins the queue
+    `VaadinSession.unlock()` keeps draining until empty (`R_unlock_pushes`).
+  - **No scope, so no `Q_scope_membership`**: every wake counts and none races — `complete()`
+    holds the lock, and a background job's completion lands through `session.access` in a drain
+    like any other.
+  - **Exactly Swing's promise**: the modal's caller runs after the OK listener, before the next
+    event — here after the listener, in the drain, before the response or the next request. It
+    covers wakers that are no fiber too: `showAndAwait`'s plain OK listener.
+  - **SB-Emulators keeps its drain** (`VaadinService.runPendingAccessTasks`), now sound under every
+    runner. A test asserting straight after `_click` still needs a roundtrip, as `_fireConfirm` does.
+  - Rejected: a second SPI call `runAllWokenUntilFirstPark()` — settled before the call returns,
+    stronger than Swing, but every waker must remember to call it, a plain listener included; and
+    the idea's scope-local queue, which needs the scope membership this avoids.
 - **`Q_nested_run_later`** — `runLater` inside a fiber is `session.access(...)`, which runs at the
-  next *drain*. A park that releases raw (`Condition.await()`, the handoff) drains nothing, so under
-  background threads the new fiber starts at a later push or the request's end, not at the parent's
-  park as `runLater`'s javadoc promises; later parks drain through their `ui.push()` (if the
-  unverified bullet of `R_unlock_pushes` holds), nesting a handoff inside the parent's park. Loom's
-  first park under `mountHere` is the same: the caller's ultimate unlock drains it. Loosen the
-  javadoc to "at the next drain", or make every `Completable.park()` drain first?
+  next *drain*; a park releasing raw (`Condition.await()`) drains nothing. Settled with
+  `Q_settle_woken`: **every real release of the lock drains first**. The caller's ultimate unlock
+  does so by itself; every `Completable.park()` outside `runUntilFirstPark` drains before it
+  releases, so a `runLater` or a woken fiber starts at the parent's park, as `runLater`'s javadoc
+  promises — under background threads a handoff nested in the parent's park, before its `await()`.
+  The first park inside `runUntilFirstPark` doesn't drain: the caller still holds the lock, and its
+  own unlock drains.
 - **`Q_epilogue_hook`** — should SB-Emulators reconcile in `ui.beforeClientResponse(...)` instead
   of after the listener? It then holds for every UIDL, pushes included, whatever the strategy.
   Does the API offer a "before every park" hook for it, or is Vaadin's own hook enough?

@@ -5,6 +5,10 @@ needs one more thing: every UI fiber that its UI fiber *woke* — a dialog's par
 OK click's UI fiber completing its future — must also have run up to its next park or end. Graduates
 into `D_run_until_park` and `BlockingExecutor.runUntilPark`'s javadoc.
 
+**Superseded in part** by `spi.md`'s `Q_settle_woken`: a wake-up is an access task, settled in the
+session's drain rather than a scope, so the mechanism sketch and `Q_scope_membership` below are
+moot. Kept for the evidence and side findings until graduated.
+
 ## Evidence (2026-09-24)
 
 - `RunUntilParkProbeTest.aUIFiberWokenByTheCallIsNotSettledWhenItReturns`: UI fiber A parks on
