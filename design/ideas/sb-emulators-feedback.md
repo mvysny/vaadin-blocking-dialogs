@@ -23,14 +23,6 @@ pressure; **not needed** = SB-Emulators has no use for it; graduate or keep on i
 - **Publish to Maven Central.** An SB-Emulators release can't depend on a SNAPSHOT that lives only in
   `~/.m2`. `Q_coordinates`: does it stay `com.github.mvysny.vaadin-blocking-dialogs`, or move to
   Vaadin coordinates, given that a Vaadin product depends on it?
-- **A `CancellationException` from the app's own code is swallowed.** `UIFibers.runReportingErrors`
-  ends a UI fiber quietly at DEBUG on *any* `CancellationException`, not only a dead wait's. Example:
-  a migrated `actionPerformed` calls `SwingWorker.get()` on a cancelled worker. On the desktop that
-  reaches the uncaught-exception handler; here it vanishes.
-  - `Q_dead_wait_type`: a library-owned subtype, say `WaitDiedException extends
-    CancellationException`, thrown by `AnchorWatch.end()` and the interrupt path. Only that subtype
-    ends quietly, and everything else goes to the ErrorHandler. Catch sites that catch
-    `CancellationException` keep working.
 
 ## Soon
 
@@ -80,10 +72,10 @@ pressure; **not needed** = SB-Emulators has no use for it; graduate or keep on i
 
 Recorded so they aren't mistaken for library asks:
 
-- A dead modal's `CancellationException` now escapes `JOptionPane.show*` into migrated code, where a
+- A dead modal's `WaitDiedException` now escapes `JOptionPane.show*` into migrated code, where a
   `catch (Exception e)` swallows it and the listener runs on after its session died. SB-Emulators'
   convention for "a blocking call nobody can answer" is its own `Error` subtype, which a
-  `catch (Exception)` cannot swallow. Convert at the `Dialog` seam, and keep it out of the
-  ErrorHandler during teardown. This is easier once `Q_dead_wait_type` exists.
+  `catch (Exception)` cannot swallow. Convert `WaitDiedException` only, at the `Dialog` seam, and
+  keep it out of the ErrorHandler during teardown.
 - The docs sweep: 47 SB-Emulators files still name `:loom` or its executor.
 - A real-browser run of Sampler's dialog and F5 flows. So far everything is Karibu only.

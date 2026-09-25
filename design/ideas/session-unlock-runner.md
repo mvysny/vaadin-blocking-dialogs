@@ -95,7 +95,7 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   The release must bypass `VaadinSession.unlock()`, whose ultimate unlock would push the
   listener's half-done state: see "On the SPI" below.
 - **`Q_cancellation`** — mostly answered by the anchor model (`D_anchored_wait`): a parked worker is released because its future is cancelled when its anchor dies,
-  and it unwinds through `CancellationException`; session destroy and tab close both reach it
+  and it unwinds through `WaitDiedException`; session destroy and tab close both reach it
   (`R_session_destroy_detaches`). Left for this runner: a closed `@PreserveOnRefresh` tab is only noticed at
   heartbeat expiry (default ~15 min), and its worker is held until then — price it in `Q_scale_budget`.
 - **`Q_stale_after_relock`** — while unlocked, other requests mutate the UI freely; the UI may

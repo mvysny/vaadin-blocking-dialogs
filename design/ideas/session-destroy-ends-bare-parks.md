@@ -34,7 +34,7 @@ point, because loom lets them.
 ## Options
 
 **A. Backstop.** On session destroy, interrupt every UI fiber thread of that session. A park inside
-`parkAndAwait` already turns the interrupt into `CancellationException`; a bare park sees
+`parkAndAwait` already turns the interrupt into `WaitDiedException`; a bare park sees
 `InterruptedException`. The registry is a session attribute holding a weak set of UI fiber threads.
 The runner sees every park, so it keeps the registry. The destroy listener is registered lazily
 on the first `runLater` of a session (`service.addSessionDestroyListener`), or from the

@@ -16,7 +16,6 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -56,7 +55,7 @@ public final class BlockingDialogs {
      * @param dialog the anchor of the wait.
      * @return the value {@code answer} completed with.
      * @throws IllegalStateException outside a UI fiber.
-     * @throws CancellationException if the dialog detached without an answer.
+     * @throws WaitDiedException     if the dialog detached without an answer.
      */
     public static <T extends @Nullable Object> T showAndAwait(Dialog dialog, CompletableFuture<T> answer) {
         Objects.requireNonNull(answer);
@@ -86,7 +85,7 @@ public final class BlockingDialogs {
      * The dialog may be shown again: the listeners added here are removed on return.
      *
      * @throws IllegalStateException outside a UI fiber.
-     * @throws CancellationException if the dialog detached without an answer.
+     * @throws WaitDiedException     if the dialog detached without an answer.
      */
     public static ConfirmDialogOutcome showAndAwait(ConfirmDialog dialog) {
         final Completable<ConfirmDialogOutcome> answer = UIFibers.newCompletable();

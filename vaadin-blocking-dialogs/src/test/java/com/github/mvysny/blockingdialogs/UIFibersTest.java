@@ -348,6 +348,27 @@ public class UIFibersTest {
             assertSame(boom, thrown.get());
             assertEquals(List.of(), errors);
         }
+
+        @Test
+        public void fromABackgroundThreadRethrowsADeadWaitAsIs() throws Exception {
+            final UI ui = UI.getCurrent();
+            final WaitDiedException dead = new WaitDiedException("the dialog detached", null);
+            final AtomicReference<Throwable> thrown = new AtomicReference<>();
+            final Thread job = new Thread(() -> {
+                try {
+                    UIFibers.accessSynchronously(ui, () -> {
+                        throw dead;
+                    });
+                } catch (Throwable t) {
+                    thrown.set(t);
+                }
+            });
+            job.start();
+            awaitPendingAccess();
+            MockVaadin.clientRoundtrip(true);
+            job.join(5000);
+            assertSame(dead, thrown.get());
+        }
     }
 
     @Nested
@@ -502,10 +523,35 @@ public class UIFibersTest {
             future.cancel(false);
             MockVaadin.clientRoundtrip();
             assertInstanceOf(CancellationException.class, caught.get());
+            assertFalse(caught.get() instanceof WaitDiedException, "the app cancelled it, the wait lives on");
         }
 
         @Test
-        public void interruptedParkThrowsCancellationExceptionWithTheFlagRestored() {
+        public void anEscapingCancelledFutureGoesToTheErrorHandler() {
+            final CompletableFuture<String> future = new CompletableFuture<>();
+            UIFibers.runLater(() -> UIFibers.parkAndAwait(UI.getCurrent(), future));
+            MockVaadin.clientRoundtrip();
+            future.cancel(false);
+            MockVaadin.clientRoundtrip(true);
+            assertEquals(1, errors.size());
+            assertInstanceOf(CancellationException.class, errors.get(0));
+        }
+
+        /**
+         * A migrated Swing listener calling {@code SwingWorker.get()} on a cancelled worker.
+         */
+        @Test
+        public void anEscapingCancellationOfTheAppsOwnGoesToTheErrorHandler() {
+            final CancellationException workerCancelled = new CancellationException("worker cancelled");
+            UIFibers.runLater(() -> {
+                throw workerCancelled;
+            });
+            MockVaadin.clientRoundtrip(true);
+            assertEquals(List.of(workerCancelled), errors);
+        }
+
+        @Test
+        public void interruptedParkThrowsWaitDiedExceptionWithTheFlagRestored() {
             final AtomicReference<Thread> fiber = new AtomicReference<>();
             final AtomicReference<Throwable> caught = new AtomicReference<>();
             final AtomicReference<Boolean> interrupted = new AtomicReference<>();
@@ -521,7 +567,7 @@ public class UIFibersTest {
             MockVaadin.clientRoundtrip();
             fiber.get().interrupt();
             MockVaadin.clientRoundtrip();
-            assertInstanceOf(CancellationException.class, caught.get());
+            assertInstanceOf(WaitDiedException.class, caught.get());
             assertTrue(interrupted.get());
         }
 

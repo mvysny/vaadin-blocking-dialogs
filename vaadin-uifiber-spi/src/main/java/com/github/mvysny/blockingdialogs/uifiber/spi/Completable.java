@@ -36,9 +36,9 @@ public interface Completable<R> {
      * stays detached, and when the future the app waits for fails or is cancelled. A user's Cancel is
      * an answer, {@link #complete}, never this.
      *
-     * @param cause a {@link CancellationException} when the wait is dead, which {@link #park()}
-     *              throws as-is; any other cause when the wait failed, which it wraps in an
-     *              {@link ExecutionException}.
+     * @param cause a {@link CancellationException} - the wait is dead, or the app's future was
+     *              cancelled - which {@link #park()} throws as-is, subtype and all; any other cause
+     *              when the wait failed, which it wraps in an {@link ExecutionException}.
      */
     void fail(Throwable cause);
 
@@ -54,7 +54,7 @@ public interface Completable<R> {
      * and releases nothing - no park at all, for {@link UIFiberRunnerSpi#runUntilFirstPark} neither.
      *
      * @return the value passed to {@link #complete}.
-     * @throws CancellationException if {@link #fail} got one: the wait is dead.
+     * @throws CancellationException if {@link #fail} got one, the very instance.
      * @throws ExecutionException    if {@link #fail} got any other cause, which it wraps.
      * @throws InterruptedException  if the fiber's thread was interrupted while waiting.
      * @throws IllegalStateException if the caller isn't the running UI fiber that made this, or this was

@@ -53,11 +53,12 @@ import java.util.function.Supplier;
  * anchor is attached again by the time the current request is handled ({@code @PreserveOnRefresh}).
  * Nothing else kills a parked UI fiber from outside.
  * <p>
- * <b>Cancellation means "the wait is dead", nothing else.</b> A {@link CancellationException} escaping
- * a UI fiber ends it quietly; anything else goes to the session's {@link ErrorHandler}. A user-facing
- * Cancel is an answer: the dialog completes its future with a cancel value. So a progress dialog's
- * Cancel must not cancel the future the UI fiber awaits, or the UI fiber ends silently; await an outcome
- * future, and let Cancel stop the job and complete the outcome.
+ * <b>A dead wait ends quietly, nothing else.</b> A {@link WaitDiedException} escaping a UI fiber ends
+ * it quietly; anything else goes to the session's {@link ErrorHandler}, the app's own
+ * {@link CancellationException} included. A user-facing Cancel is an answer: the dialog completes its
+ * future with a cancel value. So a progress dialog's Cancel must not cancel the future the UI fiber
+ * awaits, or the UI fiber fails; await an outcome future, and let Cancel stop the job and complete the
+ * outcome.
  * <p>
  * The UI fibers are run by the one {@link UIFiberRunnerSpi} on the classpath.
  * <p>
@@ -134,11 +135,11 @@ public final class UIFibers {
      *     <li>from a background thread not holding the session lock, runs it as a new UI fiber - a job
      *     asking the user mid-way.</li>
      * </ul>
-     * Exceptions, {@link CancellationException} included, go to the caller, not the
+     * Exceptions, {@link WaitDiedException} included, go to the caller, not the
      * {@link ErrorHandler} - as with {@link UI#accessSynchronously}.
      *
      * @return what {@code body} returned.
-     * @throws CancellationException if the waiting background thread is interrupted, the interrupt
+     * @throws WaitDiedException     if the waiting background thread is interrupted, the interrupt
      *                               flag restored.
      * @throws IllegalStateException from any other thread holding the session lock, which would
      *                               deadlock; or inside a UI fiber, for a {@code ui} of another session.
@@ -187,10 +188,9 @@ public final class UIFibers {
      * @param anchor whose life this wait belongs to - a dialog anchors its own answer. An anchor
      *               that is never attached never ends the wait; its death cancels {@code future}.
      * @return the value {@code future} completed with. The cause of a failed {@code future} is
-     * rethrown as-is, checked or not.
-     * @throws CancellationException if {@code future} is cancelled or the anchor died, or the park is
-     *                               interrupted, the interrupt flag restored. Let it escape: the UI
-     *                               fiber ends quietly.
+     * rethrown as-is, checked or not, and so is the {@link CancellationException} of a cancelled one.
+     * @throws WaitDiedException     if the anchor died, or the park is interrupted, the interrupt flag
+     *                               restored. Let it escape: the UI fiber ends quietly.
      * @throws IllegalStateException unless called inside a UI fiber.
      */
     public static <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
@@ -244,7 +244,8 @@ public final class UIFibers {
      * {@code @PreserveOnRefresh} migration, and survives a dialog removed once answered.
      *
      * @param future the app's future {@code wakeUp} waits for, if any.
-     * @throws CancellationException if {@code wakeUp} fails with one, or the park is interrupted.
+     * @throws WaitDiedException     if the anchor died, or the park is interrupted.
+     * @throws CancellationException if {@code wakeUp} fails with one.
      */
     static <T extends @Nullable Object> T awaitAnchored(Component anchor, Completable<T> wakeUp,
                                                          @Nullable CompletableFuture<?> future) {
@@ -329,13 +330,13 @@ public final class UIFibers {
     }
 
     /**
-     * Runs {@code body}; a {@link CancellationException} ends it quietly, anything else goes to the
+     * Runs {@code body}; a {@link WaitDiedException} ends it quietly, anything else goes to the
      * session's {@link ErrorHandler}. Throws nothing, even when the handler does.
      */
     private static void runReportingErrors(Runnable body) {
         try {
             body.run();
-        } catch (CancellationException e) {
+        } catch (WaitDiedException e) {
             log.debug("The wait of a UI fiber died, so the UI fiber ended", e);
         } catch (Throwable t) {
             try {
@@ -418,7 +419,7 @@ public final class UIFibers {
          * Called holding the lock. Cancels the app's future too: a background job sees the wait is gone.
          */
         private void end() {
-            Objects.requireNonNull(wakeUp).fail(new CancellationException("The anchor of the wait detached"));
+            Objects.requireNonNull(wakeUp).fail(new WaitDiedException("The anchor of the wait detached", null));
             if (future != null) {
                 future.cancel(false);
             }
@@ -435,17 +436,21 @@ public final class UIFibers {
 
     /**
      * {@code wait} with the {@link #parkAndAwait} exception contract.
+     *
+     * @implNote Unwraps a {@link CancellationException}: JDK 23+ {@link CompletableFuture#get()}
+     * throws a new one, the one it was completed with attached - a body's {@link WaitDiedException}
+     * would reach {@link #accessSynchronously}'s caller as a plain one.
      */
     private static <T extends @Nullable Object> T waitUnwrapped(Wait<T> wait) {
         try {
             return wait.get();
+        } catch (CancellationException e) {
+            throw e.getCause() instanceof CancellationException cause ? cause : e;
         } catch (ExecutionException e) {
             throw sneakyThrow(e.getCause());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            final CancellationException cancelled = new CancellationException("The wait was interrupted");
-            cancelled.initCause(e);
-            throw cancelled;
+            throw new WaitDiedException("The wait was interrupted", e);
         }
     }
 
