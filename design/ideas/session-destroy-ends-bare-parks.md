@@ -10,10 +10,10 @@ SB-Emulators' modal `Dialog.show()` parked with a bare `CountDownLatch.await()` 
 Its old `:loom` ran UI fibers on a session-scoped `ExecutorService` that it `shutdownNow()`'d on
 session destroy, so the interrupt unwound a parked modal (`R_vt_scheduler`, last bullet). On this
 library the same park stayed `WAITING` after `MockVaadin.tearDown()`, indefinitely. Switching the
-park to `BlockingDialogs.parkAndAwait(dialogPeer, future)` fixed it:
+park to `UIFibers.parkAndAwait(dialogPeer, future)` fixed it:
 `R_session_destroy_detaches` detached the peer, `AnchorWatch` cancelled the future, and the UI fiber
 unwound. So `D_anchored_wait` holds up. The leak came from leaning on the bare park that
-`D_pluggable_strategy` forbids.
+`D_pluggable_runner` forbids.
 
 ## Why it is still worth something
 
@@ -36,23 +36,24 @@ point, because loom lets them.
 **A. Backstop.** On session destroy, interrupt every UI fiber thread of that session. A park inside
 `parkAndAwait` already turns the interrupt into `CancellationException`; a bare park sees
 `InterruptedException`. The registry is a session attribute holding a weak set of UI fiber threads.
-The destroy listener is registered lazily on the first `runLater` of a session
-(`service.addSessionDestroyListener`), so the jar still ships no `VaadinServiceInitListener`. That
-was `D_anchored_wait`'s objection to a `requestEnd` hook, and it doesn't apply here. But this
+The runner sees every park, so it keeps the registry. The destroy listener is registered lazily
+on the first `runLater` of a session (`service.addSessionDestroyListener`), or from the
+`VaadinServiceInitListener` the loom jar ships anyway (`SessionLockCheck`), so
+`D_anchored_wait`'s objection to a `requestEnd` hook doesn't apply here. But this
 directly reverses the entry's "no backstop either", and it duplicates the detach signal as state,
 which is exactly what that entry refuses. It is loom-only in effect: under session-unlock the
 destroy can't even run while a bare park holds the lock.
 
 **B. Tripwire at park time.** The loom carrier knows when a continuation returns with its virtual
 thread still alive: right after `continuation.run()` in `SessionCarrier.mount`. If the UI fiber is not
-inside `awaitAnchored`'s park at that moment, it parked bare, so WARN with the parked thread's
-stack, once per call site. Enforces `D_pluggable_strategy` without a registry. **Probably
+inside a `Completable.park()` at that moment, it parked bare, so WARN with the parked thread's
+stack, once per call site. Enforces `D_pluggable_runner` without a registry. **Probably
 unworkable:** every unmount looks the same to the carrier. A contended `ReentrantLock`, a
 `Thread.sleep`, and socket IO (a JDBC query in a UI fiber) all unmount. So B false-positives on
 ordinary IO. See `Q_io_unmount`.
 
 **C. Tripwire at destroy.** The registry from A, but it only reports. On session destroy, WARN for
-every UI fiber thread of the session that is still alive and not parked in `awaitAnchored`, with its
+every UI fiber thread of the session that is still alive and not parked in a `Completable.park()`, with its
 stack ("this UI fiber parked outside `parkAndAwait`; it will never end"). No false positives from IO
 (a UI fiber mid-query at the moment of destroy is rare, and still worth a line). It keeps
 `D_anchored_wait`'s promise — the library still kills nothing from outside — and makes the leak

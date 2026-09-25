@@ -14,7 +14,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         java: [21, 25]
-        # the loom strategy's reflection hack is JVM-implementation-sensitive (JDK-8308541)
+        # the loom runner's reflection hack is JVM-implementation-sensitive (JDK-8308541)
         distribution: [oracle, corretto, temurin]
 
     runs-on: ${{ matrix.os }}
@@ -30,7 +30,7 @@ jobs:
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v6
     - name: Build with Gradle
-      # JDK 21 pins (R_vt_pinning), which the loom strategy refuses unless told otherwise
+      # JDK 21 pins (R_vt_pinning), which the loom runner refuses unless told otherwise
       run: ./gradlew clean build '-Pvaadin.productionMode' --no-daemon --no-watch-fs ${{ matrix.java < 24 && '-Dblockingdialogs.uifiber.loom.allowPinningJdk=true' || '' }}
 
   design-docs:

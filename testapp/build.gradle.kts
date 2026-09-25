@@ -30,7 +30,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-// the loom strategy reflects into java.lang.ThreadBuilders$VirtualThreadBuilder (JDK-8308541)
+// the loom runner reflects into java.lang.ThreadBuilders$VirtualThreadBuilder (JDK-8308541)
 val addOpens = listOf("--add-opens", "java.base/java.lang=ALL-UNNAMED")
 tasks.withType<Test> { jvmArgs(addOpens) }
 tasks.withType<JavaExec> { jvmArgs(addOpens) }

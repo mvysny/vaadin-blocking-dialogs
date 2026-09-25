@@ -14,7 +14,7 @@ import com.github.mvysny.vaadinboot.VaadinBoot;
 public final class Main {
     public static void main(String[] args) throws Exception {
         new VaadinBoot()
-                .useVirtualThreadsIfAvailable(false)  // the loom strategy needs platform request threads
+                .useVirtualThreadsIfAvailable(false)  // the loom runner needs platform request threads
                 .run();
     }
 }

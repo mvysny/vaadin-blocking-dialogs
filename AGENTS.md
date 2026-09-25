@@ -5,12 +5,12 @@
 A library that lets Vaadin Flow code block on a dialog - `if (confirm("Delete?")) delete();` - the
 way Swing's `JOptionPane` does, instead of splitting the logic into callbacks. The code is suspended
 until the user answers while the browser keeps receiving UI updates. How it is suspended is a
-pluggable strategy: virtual threads, or a platform thread parked with the session lock released.
+pluggable runner: virtual threads, or a platform thread parked with the session lock released.
 
 ## Promises
 
 - **Blocking code reads like Swing.** A dialog call returns the user's answer on the caller's own stack; never a callback.
-- **One API, any strategy.** Code written against `vaadin-blocking-dialogs` runs unchanged on every strategy; switching is a wiring change. See `D_pluggable_strategy`.
+- **One API, any runner.** Code written against `vaadin-blocking-dialogs` runs unchanged on every runner; switching is a wiring change. See `D_pluggable_runner`.
 
 ## Design docs
 
@@ -31,28 +31,28 @@ Every fact lives in exactly one of these; the others link to it.
 - **Vaadin is `compileOnly` in the published modules.** A bundled Vaadin clashes with the app's own version.
 - **Every app and test serving a blocking dialog has `@Push`.** Without it the dialog never reaches the browser while the code is blocked; see `R_unlock_pushes`.
 - **Loom: HTTP requests are served by platform threads**, until virtual ones are checked in a real container: a continuation can't mount on a virtual one (`R_vt_scheduler`), so a platform thread carries each segment while the request thread waits.
-- **Loom: every `VaadinService` routes `getSessionLock()` through `VirtualThreadAwareLock.wrap()`** — the testapp's servlet extends `LoomVaadinServlet`, Karibu tests use `MockVirtualThreadAwareServlet`. Without it a UI virtual thread taking the session lock recurses into `StackOverflowError`; see `R_vt_lock_identity`.
-- **Loom: CI's JDK 21 job passes `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`**, which the root build forwards to every test JVM; without it the strategy refuses to start there (`D_loom_jdk_gate`).
+- **Loom: every `VaadinService` routes `getSessionLock()` through `VirtualThreadAwareLock.wrap()`** — the testapp's servlet extends `LoomVaadinServlet`, Karibu tests use `MockVirtualThreadAwareServlet`. Without it every session fails at init (`SessionLockCheck`), since a UI virtual thread taking the lock would recurse into `StackOverflowError`; see `R_vt_lock_identity`.
+- **Loom: CI's JDK 21 job passes `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`**, which the root build forwards to every test JVM; without it the runner refuses to start there (`D_loom_jdk_gate`).
 - **Loom: every JVM running it has `--add-opens java.base/java.lang=ALL-UNNAMED`** — tests, `:testapp:run`, the distribution. The scheduler reflection fails without it; see `R_vt_scheduler`.
 - **Loom: a test that parks inside `synchronized` stays `@EnabledForJreRange(minVersion = 24)` while CI runs JDK 21.** On 21-23 it does not fail, it hangs the test JVM; see `R_vt_pinning`.
 
 ## Module map
 
-- `vaadin-blocking-dialogs` — the strategy-neutral API app code is written against; published.
-- `vaadin-uifiber-spi` — `UIFiberRunnerSpi`, what a strategy implements and no app calls; published. Nothing uses it yet: the API and loom still speak `BlockingExecutor` until `design/ideas/spi.md` lands.
-- `vaadin-uifiber-loom` — the virtual-thread strategy, ported from `../vaadin-loom`; published. Its test fixtures (`MockVirtualThreadAwareServlet`) are not.
-- `testapp` — Vaadin Boot demo on the loom strategy, one app per strategy since a classpath holds one (`D_spi_exactly_one`); never published.
+- `vaadin-blocking-dialogs` — the runner-neutral API app code is written against, built on the SPI; published.
+- `vaadin-uifiber-spi` — `UIFiberRunnerSpi`, what a runner implements and no app calls; published. See `D_spi_split`.
+- `vaadin-uifiber-loom` — the virtual-thread runner, on the SPI alone, ported from `../vaadin-loom`; published. Its test fixtures (`MockVirtualThreadAwareServlet`) are not; the API's tests run on it.
+- `testapp` — Vaadin Boot demo on the loom runner, one app per runner since a classpath holds one (`D_spi_exactly_one`); never published.
 
 ## Conventions
 
 - **Pure Java, no Kotlin** — production code and tests alike.
-- **Java 21 bytecode; the loom strategy needs JDK 24+ at runtime.** CI builds on 21 to keep the floor honest.
+- **Java 21 bytecode; the loom runner needs JDK 24+ at runtime.** CI builds on 21 to keep the floor honest.
 - **Tests: JUnit Jupiter + Karibu-Testing through the Java `LocatorJ` API**, in-JVM without a browser; no mocking library.
 - **Nullability is JSpecify: every package is `@NullMarked`** in its `package-info.java`, so only `@Nullable` is written; a type parameter that admits `null` is `<T extends @Nullable Object>`.
 - **Dependency versions live in `gradle/libs.versions.toml`**, never in a module's `build.gradle.kts`.
 - **A published module calls `configureMavenCentral("<artifactId>")`**; the artifactId is its directory name, the package `com.github.mvysny.blockingdialogs` for `vaadin-blocking-dialogs`, `com.github.mvysny.blockingdialogs.uifiber.<x>` for `vaadin-uifiber-<x>`.
 - **Every source and build file opens with the MIT header, `Copyright 2026 Martin Vysny`** — code ported from vaadin-loom included, its `Vaadin Ltd.` header replaced; copy it from `build.gradle.kts`.
-- **The unit a strategy runs is a *UI fiber*, never a "block"**, in prose and identifiers (`isInUIFiber`); the `Runnable` handed in is its `body`. See `D_ui_fiber`.
+- **The unit a runner runs is a *UI fiber*, never a "block"**, in prose and identifiers (`isInUIFiber`); the `Runnable` handed in is its `body`. See `D_ui_fiber`.
 - **Pre-1.0: break APIs freely.**
 
 ## Commands

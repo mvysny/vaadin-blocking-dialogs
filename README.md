@@ -3,7 +3,7 @@
 A library that lets Vaadin Flow code block on a dialog - `if (confirm("Delete?")) delete();` - the
 way Swing's `JOptionPane` does, instead of splitting the logic into callbacks. The code is suspended
 until the user answers while the browser keeps receiving UI updates. How it is suspended is a
-pluggable strategy: virtual threads, or a platform thread parked with the session lock released.
+pluggable runner: virtual threads, or a platform thread parked with the session lock released.
 
 > **Work in progress.** Nothing is published to Maven Central yet, and the API is not settled.
 
@@ -14,19 +14,19 @@ such a hard thing to do in a web framework.
 
 | Artifact | What it is |
 |---|---|
-| `vaadin-blocking-dialogs` | The strategy-neutral API your code is written against. |
-| `vaadin-uifiber-spi` | The SPI a strategy implements; your code never calls it. |
-| `vaadin-uifiber-loom` | The virtual-thread strategy, grown out of the [vaadin-loom](https://github.com/mvysny/vaadin-loom) prototype. |
+| `vaadin-blocking-dialogs` | The runner-neutral API your code is written against. |
+| `vaadin-uifiber-spi` | The SPI a runner implements; your code never calls it. |
+| `vaadin-uifiber-loom` | The virtual-thread runner, grown out of the [vaadin-loom](https://github.com/mvysny/vaadin-loom) prototype. |
 | `vaadin-uifiber-session-unlock` | Planned: parks an ordinary platform thread with the Vaadin session lock released. |
 
 Group id: `com.github.mvysny.vaadin-blocking-dialogs`. The `testapp` module is a demo, not published.
 
 ## Requirements
 
-Every strategy needs `@Push` on your `AppShellConfigurator`: the dialog travels to the browser while
+Every runner needs `@Push` on your `AppShellConfigurator`: the dialog travels to the browser while
 your code is blocked, and only push can carry it there.
 
-The loom strategy additionally needs:
+The loom runner additionally needs:
 
 - **Its servlet**, whose session lock a virtual thread can take. `LoomVaadinServlet` registers
   nowhere by itself; subclass it:
@@ -42,13 +42,13 @@ The loom strategy additionally needs:
       return VirtualThreadAwareLock.wrap(this, wrappedSession, super.getSessionLock(wrappedSession));
   }
   ```
-  Without it, every `runLater` throws, naming the fix.
+  Without it, the first session fails to start, naming the fix.
 - **Java 24+ at runtime** (it compiles for Java 21). On Java 21-23 a virtual thread that blocks
   inside a `synchronized` block deadlocks the session - see
   [JEP 491](https://openjdk.org/jeps/491) and [vaadin-loom#2](https://github.com/mvysny/vaadin-loom/issues/2) -
-  so the strategy refuses to start there, unless you accept the risk with
+  so the runner refuses to start there, unless you accept the risk with
   `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`.
-- **`--add-opens java.base/java.lang=ALL-UNNAMED`** on the JVM: the strategy reflects into the JDK
+- **`--add-opens java.base/java.lang=ALL-UNNAMED`** on the JVM: the runner reflects into the JDK
   to run virtual threads on Vaadin's UI "thread" ([JDK-8308541](https://bugs.openjdk.org/browse/JDK-8308541)).
 - **HTTP requests served by platform threads**, not virtual ones - with Vaadin Boot,
   `new VaadinBoot().useVirtualThreadsIfAvailable(false)`. Virtual request threads are not verified
@@ -60,7 +60,7 @@ Start a *UI fiber* from a listener - UI code that may park until the user answer
 released meanwhile. Inside it, a dialog call returns the user's answer:
 
 ```java
-button.addClickListener(e -> BlockingDialogs.runLater(() -> {
+button.addClickListener(e -> UIFibers.runLater(() -> {
     ConfirmDialog dialog = new ConfirmDialog();
     dialog.setText("Delete " + file + "?");
     dialog.setCancelable(true);
@@ -76,12 +76,12 @@ or the session expires. Its `finally` blocks run on the way out.
 ### Beyond dialogs
 
 Underneath, a UI fiber can wait for any `CompletableFuture`, not only a dialog's answer.
-`BlockingDialogs.parkAndAwait(anchor, future)` parks until the future completes. The anchor is the
+`UIFibers.parkAndAwait(anchor, future)` parks until the future completes. The anchor is the
 component the wait belongs to, and the wait dies with it: a Save button waiting on its own progress
 bar, or a background job's result shown in a progress dialog. From a background thread,
-`BlockingDialogs.accessSynchronously(ui, body)` runs a UI fiber and waits for it, so a job can ask the
+`UIFibers.accessSynchronously(ui, body)` runs a UI fiber and waits for it, so a job can ask the
 user something halfway through. When the listener's own code after the call must see what the UI fiber
-did, `BlockingDialogs.runUntilPark(body)` returns once the UI fiber has opened its first dialog, or
+did, `UIFibers.runUntilPark(body)` returns once the UI fiber has opened its first dialog, or
 ended.
 
 ## Limits
@@ -100,8 +100,8 @@ Then open [http://localhost:8080](http://localhost:8080).
 
 ## Credits
 
-The session-unlock strategy is [Matthias Perktold's](https://github.com/mperktold/blocking-dialogs/)
-idea; the loom strategy follows the [vaadin.com blog post](https://vaadin.com/blog/tackling-blocking-dialogs-in-web-applications-with-vaadin).
+The session-unlock runner is [Matthias Perktold's](https://github.com/mperktold/blocking-dialogs/)
+idea; the loom runner follows the [vaadin.com blog post](https://vaadin.com/blog/tackling-blocking-dialogs-in-web-applications-with-vaadin).
 
 ## License
 

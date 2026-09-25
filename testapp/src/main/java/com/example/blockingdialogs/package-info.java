@@ -5,7 +5,7 @@
  * for the full license text.
  */
 /**
- * The demo app, on the loom strategy.
+ * The demo app, on the loom runner.
  */
 @NullMarked
 package com.example.blockingdialogs;

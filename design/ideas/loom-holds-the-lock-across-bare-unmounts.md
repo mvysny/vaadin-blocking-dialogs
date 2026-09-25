@@ -6,9 +6,9 @@ things:
 
 - **`D_input_exclusion`**: IO before the first dialog lets a double click start the action twice
   (`IoUnmountProbeTest.aSocketReadBeforeTheFirstDialogLetsADoubleClickIn`).
-- **One API, any strategy**: under session-unlock, a UI fiber holds the lock except inside the park
-  (`StrategySupport`'s class doc says so: "it runs holding the session lock except inside
-  `Park#park()`"). Loom breaks that owed invariant. So the same UI fiber is atomic on one strategy
+- **One API, any runner**: under session-unlock, a UI fiber holds the lock except inside the park
+  (`UIFiberRunnerSpi`'s "The lock" says so: every `park()` releases it, nothing else does). Loom
+  breaks that owed invariant, and `LoomUIFiberRunner`'s class doc says so meanwhile. So the same UI fiber is atomic on one runner
   and interleaved on the other.
 - **Ordinary Vaadin expectations**: a listener doing a JDBC call is atomic against the
   session's other requests. Wrapped in `runLater`, it silently no longer is. SB-Emulators feels
@@ -31,7 +31,7 @@ Only an unmount inside `parkAndAwait` releases the lock. For any other unmount, 
 inside its access task, holding the lock, and waits for that UI fiber's next continuation.
 
 - Per UI fiber, a small state object: `releasing` (set on the UI fiber's own thread right before
-  `future.get()` in `LoomBlockingExecutor.parkAndAwait`'s `Park`, cleared on resume) and a
+  `future.get()` in `LoomUIFiberRunner.WakeUp.park()`, cleared on resume) and a
   one-slot hand-off queue.
 - `SessionCarrier.mount`: run the continuation; when it returns with the thread still alive and
   `!releasing`, it unmounted for something else. So `take()` the next continuation from the
@@ -55,7 +55,7 @@ inside its access task, holding the lock, and waits for that UI fiber's next con
   UI fiber — each has its own state object. Does any path unmount UI fiber A while UI fiber B's continuation
   waits on the same carrier? A deadlock here would be a nested take() on a queue nobody feeds.
 - `Q_timeout_backstop`: a bare `future.get()` waiting for a click now deadlocks the session, as
-  under session-unlock. Keep it a deadlock (loud, and `D_pluggable_strategy` already forbids it),
+  under session-unlock. Keep it a deadlock (loud, and `D_pluggable_runner` already forbids it),
   or WARN after N seconds with the UI fiber's stack while holding on?
 - `Q_jdk21`: with `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`, `synchronized` pins instead of
   unmounting. That already holds the lock, so this changes nothing there.

@@ -2,20 +2,20 @@
 
 The testapp is vaadin-loom's demo, ported: one button and two nested "Are you sure?" confirms ending
 in a notification. It proves the mechanism works, but not why anybody would want it, and it exercises none of the
-edge cases that make blocking hard. The testapp here is also the system test of both strategies
+edge cases that make blocking hard. The testapp here is also the system test of both runners
 (its Karibu tests drive it), so the demo *is* the regression suite — every scenario below should be
 a test too. Graduates when the testapp is built: nothing durable expected beyond a module-map
 line and the README's "Running the demo".
 
 ## Frame
 
-**One demo app per strategy** — `testapp-loom`, and `testapp-session-unlock` once that module
-exists — because the strategy is found through the SPI and more than one on the classpath is an
+**One demo app per runner** — `testapp-loom`, and `testapp-session-unlock` once that module
+exists — because the runner is found through the SPI and more than one on the classpath is an
 error (`D_spi_exactly_one`). Each is an `AppLayout` with a `SideNav`, one route per scenario. The two apps
-should run **the same demo components, differing only in the strategy jar on their classpath** —
-that is **One API, any strategy** made visible, and it stops the demos drifting apart. So the demo
+should run **the same demo components, differing only in the runner jar on their classpath** —
+that is **One API, any runner** made visible, and it stops the demos drifting apart. So the demo
 components live in a shared, unpublished module (`testapp-common`?) that depends only on
-`vaadin-blocking-dialogs`; each app is `Main` + its strategy dependency. The progress-dialog-around-
+`vaadin-blocking-dialogs`; each app is `Main` + its runner dependency. The progress-dialog-around-
 a-job helper lives there too, as the example of the outcome-future pattern (`BlockingDialogs`' class doc, "Cancellation").
 
 ## Scenario candidates
@@ -38,9 +38,9 @@ a-job helper lives there too, as the example of the outcome-future pattern (`Blo
    closes the dialog, nothing reported as an error); an exception thrown after the dialog (reaches
    the session `ErrorHandler`, shown as a notification); a dialog opened inside `synchronized`
    (works on JDK 24+; explains `R_vt_pinning` on older JDKs); nested UI fibers; a double-clicked Save
-   whose second click finds the dialog open and is dropped (`D_input_exclusion`, both strategies).
+   whose second click finds the dialog open and is dropped (`D_input_exclusion`, both runners).
 7. **Under the hood panel** — which thread runs the UI fiber (a virtual thread's name vs a worker's),
-   how many UI fibers are parked right now, session lock hold count. Makes the strategies' difference
+   how many UI fibers are parked right now, session lock hold count. Makes the runners' difference
    tangible, and `Q_scale_budget` in the session-unlock idea measurable.
 
 ## Open questions

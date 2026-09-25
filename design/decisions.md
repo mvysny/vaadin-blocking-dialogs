@@ -13,7 +13,7 @@ above, open the doc comments it touches and cut what they already say, then cut 
 
 ---
 
-## D_pluggable_strategy — Why one API over pluggable blocking strategies rather than one blocking mechanism?
+## D_pluggable_runner — Why one API over pluggable UI fiber runners rather than one blocking mechanism?
 
 Blocking a Vaadin listener takes two things at once: the code parks until the user answers, and
 the session lock is released so the dialog reaches the browser and the answering click can be
@@ -22,19 +22,20 @@ without holding a thread, but need JDK 24+ (`R_vt_pinning`), reflection into the
 `--add-opens` (`R_vt_scheduler`), a session-lock wrapper (`R_vt_lock_identity`) and platform request
 threads. A platform thread parked with the session lock released needs none of that, but holds one
 thread per open dialog and must run on a worker so the request can respond
-(`R_async_push_no_response`). So app code sees only `vaadin-blocking-dialogs`, and the strategy is
-picked where the app is wired (**One API, any strategy**). Why not loom only: its JDK floor and its
+(`R_async_push_no_response`). So app code sees only `vaadin-blocking-dialogs`, and the runner is
+picked where the app is wired (**One API, any runner**). Why not loom only: its JDK floor and its
 reach into JDK internals are what a conservative line-of-business app cannot take. Why not
 session-unlock only: it is one probe old, and gives up virtual threads' scale. The cost we carry:
-the API is only what both can implement — a UI fiber may not lean on what one strategy gives for free,
-such as a bare `future.get()` that loom tolerates.
+the API is only what every runner can implement — the SPI's two calls (`D_spi_split`) — and a UI
+fiber may not lean on what one runner gives for free, such as a bare `future.get()` that loom
+tolerates.
 
 ## D_anchored_wait — Why does a wait end when its anchor detaches, rather than with an executor scope per UI, session or tab?
 
 A wait belongs to a component — a dialog anchors its own answer — and that component's detach is
 the one signal every death of a wait sends: navigating away, closing the dialog, a session destroy
 and a tab close all detach it (`R_session_destroy_detaches`). A scope — a registry of parked UI fibers
-per UI or session, killed from outside — would duplicate that signal as state both strategies keep
+per UI or session, killed from outside — would duplicate that signal as state both runners keep
 in step, so there is none, and no backstop either. The verdict waits for the detaching UI's next
 response, because F5 on a `@PreserveOnRefresh` route detaches the view before it re-attaches it
 (`R_preserve_migration`). Why not a `VaadinRequestInterceptor.requestEnd` hook for that verdict: it
@@ -43,15 +44,33 @@ request. Why no anchorless `parkAndAwait`: a wait that names no owner can only l
 closed `@PreserveOnRefresh` tab is noticed only at heartbeat expiry — free under loom, a held worker
 thread under session-unlock.
 
-## D_spi_exactly_one — Why is the strategy found through `ServiceLoader`, exactly one, rather than handed in by the app?
+## D_spi_exactly_one — Why is the runner found through `ServiceLoader`, exactly one, rather than handed in by the app?
 
-A setter, or an executor the app builds, is global mutable state that apps take up as a wiring
-API — and then "which strategy runs this UI fiber?" has more than one answer, and every call must route
-by executor. With exactly one on the classpath the strategy is a dependency choice (**One API, any
-strategy**), `BlockingDialogs` is statics over `BlockingExecutor.get()`, and none or two is an error
-on every call. Tests get their strategy the same way, from a `META-INF/services` file in test
-resources; a strategy that needs configuration reads it itself, as SPI providers do. The cost: one
-classpath runs one strategy, so demoing both takes one app per strategy.
+A setter, or a runner the app builds, is global mutable state that apps take up as a wiring
+API — and then "which runner runs this UI fiber?" has more than one answer, and every call must route
+by runner. With exactly one on the classpath the runner is a dependency choice (**One API, any
+runner**), `UIFibers` is statics over it, and none or two is an error on every call. A runner that
+needs configuration reads it itself, as SPI providers do. The API's own tests run on loom, a test
+dependency. Why not a scripted test runner that plays the user's click inside the park: it never
+exercises the real runner, parks included; its one gift, no race between a click and an assertion,
+only the background-thread runner needs. The cost: one classpath runs one runner, so demoing both
+takes one app per runner.
+
+## D_spi_split — Why does a runner implement an SPI of its own, rather than the interface apps call?
+
+An interface both implemented and called invites every runner to redo the runner-neutral half — the
+`CurrentInstance`s, the in-fiber flag (`D_in_fiber_flag`), the `ErrorHandler` routing, the anchor
+watch, the inline branch — and to forget a piece of it. So `vaadin-uifiber-spi` holds only what a
+runner must do, `runUntilFirstPark` and the `Completable` a fiber parks on (`D_runner_owns_park`);
+`vaadin-blocking-dialogs` wraps every SPI call in that half, and a runner depends on the SPI alone.
+No `runLater` in the SPI: the access tasks pending at the ultimate unlock run before the lock is
+really released (`R_unlock_pushes`), so `runLater` is `session.access(() -> runUntilFirstPark(…))`
+on every runner. The name: it runs UI fibers, parking included; `Spi`, as the JCA's `SignatureSpi`
+beside `Signature`, because the API depends on it and so it sits in every app's autocomplete. Why not
+`…Executor`: `Executor.execute` runs any task, some time, on any thread, and invites
+`CompletableFuture.runAsync(…, it)` — both break the lock contract. The cost: a runner's setup
+error inside `runLater`'s drain lands in the `ErrorHandler`, not at the call, so a runner checks
+its setup at its own earliest point, as loom's `SessionLockCheck` does at session init.
 
 ## D_input_exclusion — Why does `runLater` keep the session's other requests out until the UI fiber's first park, rather than just queue the UI fiber?
 
@@ -59,7 +78,7 @@ The double-clicked Save button: the second click must find the first click's dia
 so that Vaadin's server-side modality drops it — Swing's "a modal blocks input from
 `setVisible(true)`". Without it every blocking action runs twice on a fast double click. Loom gives it by construction: the UI fiber's
 first segment runs inside the click request's ultimate unlock, before the lock is really released
-(`R_unlock_pushes`). A strategy whose UI fiber starts after the request responds pays for it: the
+(`R_unlock_pushes`). A runner whose UI fiber starts after the request responds pays for it: the
 request waits for the UI fiber's first park or end before responding — short and bounded, unlike the
 endless park of `R_async_push_no_response`. Not promised: a first segment that ends without parking
 releases the lock like any listener, and a later click runs the listener again.
@@ -70,7 +89,7 @@ Code after the call sometimes must see what the UI fiber did. SB-Emulators runs 
 as a UI fiber, follows it with an epilogue that reconciles state, and its tests read that state
 without a Karibu lookup — the only thing draining the access queue after `_click`. Draining it at
 the call site works under loom by accident and not under session-unlock (**One API, any
-strategy**), whose request owes the first-park wait of `D_input_exclusion` anyway. Why not make
+runner**), whose request owes the first-park wait of `D_input_exclusion` anyway. Why not make
 `runLater` wait: inside a UI fiber it can't — the new UI fiber needs the lock its caller holds — so
 `runUntilPark` runs it inline, parks included. A different promise, a different name, as
 `UI.accessSynchronously` beside `UI.access`. Why loom mounts the first segment on the caller
@@ -89,8 +108,8 @@ Every app builds its own dialogs — texts, themes, button order — so each rea
 replicate `ConfirmDialog`'s API and still not fit. And Vaadin has no common openable type:
 `ConfirmDialog` extends `Component`, not `Dialog`, and `Dialog`, `ConfirmDialog` and `Notification`
 each declare their own `open()` / `close()`. So a helper is per type — `Dialog` with the app's own
-answer future, `ConfirmDialog` mapped onto `ConfirmDialogOutcome` — and both live only on the
-`BlockingDialogs` facade, so no strategy implements or overrides them. Anything else, a fourth
+answer future, `ConfirmDialog` mapped onto `ConfirmDialogOutcome` — and both live in
+`BlockingDialogs`, over `UIFibers`, so no runner implements or overrides them. Anything else, a fourth
 button or a progress dialog around a job, is the app's own two lines around `parkAndAwait`; the
 testapp shows the progress dialog.
 
@@ -100,8 +119,8 @@ testapp shows the progress dialog.
 lock (`R_vt_lock_identity`) — the app must subclass something, and a servlet is what a Vaadin Boot
 or plain-servlet app already declares. `LoomVaadinServlet` carries no `@WebServlet`, so a library jar
 never claims `/*` behind the app's back; the app's one-line subclass does. An app with a service
-class of its own, Spring's, calls `VirtualThreadAwareLock.wrap()` from its override, and every
-`runLater` refuses an unwrapped lock, naming both fixes. Why not seed the lock from an
+class of its own, Spring's, calls `VirtualThreadAwareLock.wrap()` from its override, and the
+first session refuses an unwrapped lock at init (`SessionLockCheck`), naming both fixes. Why not seed the lock from an
 `HttpSessionListener`: it needs the service name up front, loses Vaadin's instrumented lock
 (`SessionLockListener`), relies on the container scanning a `@WebListener` in a library jar (Spring
 Boot doesn't), and `VaadinSession.refreshLock()` forbids swapping the lock later. Why no published
@@ -112,8 +131,8 @@ instead.
 
 There a UI fiber parking inside any monitor deadlocks its session for good (`R_vt_pinning`), a
 JDK-internal monitor included, so no code review rules it out. A warning or a README line is how
-vaadin-loom#2 happened: nobody reads either until the session hangs. So the executor's constructor
-throws, naming JEP 491, and `BlockingExecutor.get()` repeats it on every call — unless
+vaadin-loom#2 happened: nobody reads either until the session hangs. So the runner's constructor
+throws, naming JEP 491, and every `UIFibers` call repeats it — unless
 `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`, for shops stuck on 21 LTS that accept the risk. CI's
 JDK 21 job sets it, so the loom tests still run on the floor we compile for. Why not `--release 24`:
 the same protection as a cryptic `UnsupportedClassVersionError`, with no way out. The cost: the gate
@@ -121,7 +140,7 @@ is per JVM, so an app that never parks inside a monitor still has to opt in.
 
 ## D_ui_fiber — Why call the parkable unit a "UI fiber", rather than a block, a task or a UI thread?
 
-The code a strategy runs — one thread for its whole life, holding the session lock except while
+The code a runner runs — one thread for its whole life, holding the session lock except while
 parked — needs a noun of its own. "Block" collided with itself: a virtual thread that *blocks*
 inside a `synchronized` *block*, `finally` blocks, a modal that blocks input. "Task" is Vaadin's
 access task, "coroutine" Kotlin's, "flow" Vaadin's own name, "strand" is already a verb here. "UI
@@ -143,7 +162,7 @@ async callbacks run on arbitrary threads, and `cancel()` / `obtrudeValue()` are 
 never sees. Why not one designated releasing `Completable` per fiber: a fiber parks many times — a
 confirm, then a second dialog — and a second park holding the lock would shut out its own
 answering click. The cost: a bare park waiting for the user freezes the session, loudly and under
-every runner alike (**One API, any strategy**).
+every runner alike (**One API, any runner**).
 
 ## D_wake_is_access_task — Why does a woken UI fiber settle in the session's drain, rather than before the waking call returns?
 

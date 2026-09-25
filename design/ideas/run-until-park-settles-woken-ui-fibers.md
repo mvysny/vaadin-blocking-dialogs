@@ -3,7 +3,7 @@
 `runUntilPark` (`D_run_until_park`) returns once *its own* UI fiber parks or ends. SB-Emulators
 needs one more thing: every UI fiber that its UI fiber *woke* — a dialog's parked UI fiber, resumed by the
 OK click's UI fiber completing its future — must also have run up to its next park or end. Graduates
-into `D_run_until_park` and `BlockingExecutor.runUntilPark`'s javadoc.
+into `D_run_until_park` and `UIFibers.runUntilPark`'s javadoc.
 
 **Superseded in part** by `D_wake_is_access_task`: a wake-up is an access task, settled in the
 session's drain rather than a scope, so the mechanism sketch and `Q_scope_membership` below are
@@ -30,7 +30,7 @@ has moved on". A Vaadin app gets the same intuition from `UI.accessSynchronously
 returns, what it caused has happened. SB-Emulators gets there today only by draining the whole
 access queue, which works under loom by accident: a woken continuation happens to be a queued
 access task (`SessionCarrier.execute`). Under session-unlock the woken UI fiber is a worker thread,
-so a drain does nothing for it — the same **One API, any strategy** hole that `D_run_until_park`
+so a drain does nothing for it — the same **One API, any runner** hole that `D_run_until_park`
 closed for the first segment.
 
 ## Mechanism sketch
@@ -58,7 +58,7 @@ first-park wait of `D_input_exclusion`, over a set of UI fibers instead of one.
 
 ## Side findings from the same review
 
-- **Inline branch, stale UI after F5**: moved to `inline-ui-fiber-keeps-the-rebound-ui.md`.
+- **Inline branch, stale UI after F5**: fixed, `UIFibersTest`'s `insideAUIFiberKeepsTheUIAParkReboundTo`.
 - **IO counts as a park**: `RunUntilParkProbeTest.ioBeforeTheFirstDialog`. `runUntilPark` returns
   at a socket read before the dialog opens, because `Thread.start()` returns at *any* unmount
   (`R_vt_unmount_releases_lock`). Fixed as a side effect by

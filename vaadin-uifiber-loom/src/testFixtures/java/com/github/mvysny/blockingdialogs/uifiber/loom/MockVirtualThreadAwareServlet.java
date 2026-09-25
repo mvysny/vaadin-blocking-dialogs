@@ -20,7 +20,7 @@ import kotlin.jvm.functions.Function0;
 import java.util.concurrent.locks.Lock;
 
 /**
- * Karibu's counterpart of {@link LoomVaadinServlet}, which the loom strategy needs:
+ * Karibu's counterpart of {@link LoomVaadinServlet}, which the loom runner needs:
  * <pre>{@code
  * MockVaadin.setup(MockedUI::new, new MockVirtualThreadAwareServlet(routes));
  * }</pre>

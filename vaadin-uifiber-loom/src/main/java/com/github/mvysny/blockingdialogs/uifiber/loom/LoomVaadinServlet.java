@@ -12,7 +12,7 @@ import com.vaadin.flow.server.VaadinServlet;
 import com.vaadin.flow.server.VaadinServletService;
 
 /**
- * A {@link VaadinServlet} with the session lock the loom strategy needs, {@link VirtualThreadAwareLock}.
+ * A {@link VaadinServlet} with the session lock the loom runner needs, {@link VirtualThreadAwareLock}.
  * It carries no {@code @WebServlet}, so it never registers itself; the app subclasses it:
  * <pre>{@code
  * @WebServlet(urlPatterns = "/*", asyncSupported = true)

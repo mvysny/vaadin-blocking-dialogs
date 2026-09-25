@@ -25,10 +25,9 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * PROBE: a continuation reaching a <i>virtual</i> drainer - a background virtual thread whose
+ * A continuation reaching a <i>virtual</i> drainer - a background virtual thread whose
  * {@code ui.access()} found the session lock free - runs before that drainer lets the lock go, as
- * on a platform drainer. The claim under test is {@code Q_run_later_derived}'s proposal in
- * {@code design/ideas/spi.md}.
+ * on a platform drainer: {@code runLater} is {@code access(runUntilFirstPark)} on every drainer.
  * <p>
  * The test thread lets the session lock go, so that the virtual thread is the drainer. A platform
  * "request" thread queues on the lock while the virtual thread drains; the fiber's segment must come

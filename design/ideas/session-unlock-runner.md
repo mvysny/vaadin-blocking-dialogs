@@ -1,9 +1,9 @@
-# Blocking strategy: manual session unlock instead of virtual threads
+# A UI fiber runner: manual session unlock instead of virtual threads
 
 Ported from SB-Emulators' `ideas/blocking-strategy-manual-session-unlock.md` (probed on Vaadin
 25.2.6 / JDK 25, 2026-09-01). There it was a knob inside one app; here it becomes the
 `vaadin-uifiber-session-unlock` module, a second implementation of the common API
-(`D_pluggable_strategy`; the API is `BlockingExecutor`, the shared half `StrategySupport`). The measured Vaadin behaviour has
+(`D_pluggable_runner`: it implements `UIFiberRunnerSpi`, `D_spi_split`). The measured Vaadin behaviour has
 already moved to `design/research.md` — `R_unlock_pushes`, `R_async_push_no_response`; this file
 keeps only the design, which is not done yet.
 
@@ -80,7 +80,7 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
 - **`Q_karibu_determinism`** — the sharpest one. Loom is testable under Karibu *because* Karibu runs
   `UI.access` tasks on the test thread when it drains the queue. A real worker reintroduces a race
   between `_click` and the assertion, and Karibu's thread-locals are per-thread. Options: an
-  `INLINE` executor for tests (then the suite doesn't exercise the real strategy — the classic
+  `INLINE` executor for tests (then the suite doesn't exercise the real runner — the classic
   hazard), or a test hook that waits until the worker is parked or finished before each lookup
   (Karibu's `TestingLifecycleHook.awaitBeforeLookup` looks like the seam).
 - **`Q_modal_gap`** — now a requirement: `runLater` promises input exclusion until the UI fiber's
@@ -96,11 +96,11 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
   listener's half-done state: see "On the SPI" below.
 - **`Q_cancellation`** — mostly answered by the anchor model (`D_anchored_wait`): a parked worker is released because its future is cancelled when its anchor dies,
   and it unwinds through `CancellationException`; session destroy and tab close both reach it
-  (`R_session_destroy_detaches`). Left for this strategy: a closed `@PreserveOnRefresh` tab is only noticed at
+  (`R_session_destroy_detaches`). Left for this runner: a closed `@PreserveOnRefresh` tab is only noticed at
   heartbeat expiry (default ~15 min), and its worker is held until then — price it in `Q_scale_budget`.
 - **`Q_stale_after_relock`** — while unlocked, other requests mutate the UI freely; the UI may
   detach, the session may invalidate. On re-lock, rebind the `CurrentInstance`s to
-  the anchor's last UI, as `StrategySupport.awaitAnchored` already does — shared with loom, not new risk.
+  the anchor's last UI, as `UIFibers.awaitAnchored` already does — shared with loom, not new risk.
 - **`Q_reentrancy`** — nested dialogs, and a UI fiber started from inside a UI fiber. Hold-count
   bookkeeping must survive N levels; *Await Lock* dissolves it. The probe only did one level.
 - **`Q_worker_pool`** — who owns the pool: one per session, per UI, or app-wide? Bounded? What
@@ -113,7 +113,7 @@ the UI, but never both" is `Q_modal_gap` from the other end. **Start the design 
 
 ## On the SPI
 
-Moved from `spi.md`, deferred with this whole runner: SB-Emulators runs loom only. The contract it
+Deferred with this whole runner: SB-Emulators runs loom only. The contract it
 must meet is `UIFiberRunnerSpi`'s javadoc — no UIDL and no other request until `runUntilFirstPark`
 returns, every `park()` draining first, a wake-up an access task (`D_wake_is_access_task`).
 
