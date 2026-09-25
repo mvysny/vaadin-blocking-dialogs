@@ -24,19 +24,6 @@ pressure; **not needed** = SB-Emulators has no use for it; graduate or keep on i
   `~/.m2`. `Q_coordinates`: does it stay `com.github.mvysny.vaadin-blocking-dialogs`, or move to
   Vaadin coordinates, given that a Vaadin product depends on it?
 
-## Soon
-
-- **A bare park that nobody answers now leaks its session.** SB-Emulators' old executor
-  `shutdownNow()`'d every parked fiber on session destroy. SB-Emulators' own parks are anchored now,
-  so they unwind (`R_session_destroy_detaches`). A *migrator's* `future.get()` / `latch.await()` on
-  the EDT still leaks. So SB-Emulators wants one of:
-  - **Loom holding the lock across bare unmounts — done (`D_loom_holds_the_lock`).** The faithful
-    Swing behaviour, twice over: a bare wait on the EDT freezes the UI, as on the desktop, and a
-    JDBC call in a listener no longer lets other requests in, since the EDT never interleaves
-    listeners. A bare park now freezes the session loudly instead of leaking it, and the lock-hold
-    watchdog WARNs with its stack.
-  - **`session-destroy-ends-bare-parks.md`**: likely retired by the above; see its `Q_io_unmount`.
-
 ## Later
 
 - **`epilogue-before-every-uidl.md`.** The gap it names is real: a fiber woken by an `executeJs`
@@ -55,10 +42,6 @@ pressure; **not needed** = SB-Emulators has no use for it; graduate or keep on i
 
 ## Not needed
 
-- **`run-until-park-settles-woken-ui-fibers.md`.** `runUntilPark` plus SB-Emulators' access-queue
-  drain covers it under `D_wake_is_access_task`, and the port's test run shows it. It is ready to
-  graduate. `Q_foreign_tasks` is the one question worth keeping: could SB-Emulators drop the drain?
-  Untested.
 - **`ui-fiber-condition.md`.** `Q_condition_use_case`: no. SB-Emulators' `EventQueue.createSecondaryLoop`
   is a WARN stub, and nested modals each park on their own wait, as that idea says.
 - **`testapp.md`.** SB-Emulators' Sampler is its testbed.
@@ -76,5 +59,11 @@ Recorded so they aren't mistaken for library asks:
   convention for "a blocking call nobody can answer" is its own `Error` subtype, which a
   `catch (Exception)` cannot swallow. Convert `WaitDiedException` only, at the `Dialog` seam, and
   keep it out of the ErrorHandler during teardown.
+- A migrator's bare `future.get()` / `latch.await()` on the EDT now freezes its session, as on the
+  desktop, rather than leaking it at session destroy; the lock-hold watchdog WARNs with its stack
+  (`D_loom_holds_the_lock`). Worth a line in SB-Emulators' migration docs.
+- `Q_foreign_tasks`: could `EHelper.callSwing` drop its access-queue drain after `runUntilPark`?
+  The drain settles the modal fiber a click woke before the next event (`D_wake_is_access_task`),
+  but it also runs whatever foreign access tasks are queued. Untested.
 - The docs sweep: 47 SB-Emulators files still name `:loom` or its executor.
 - A real-browser run of Sampler's dialog and F5 flows. So far everything is Karibu only.
