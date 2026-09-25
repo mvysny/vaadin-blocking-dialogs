@@ -108,14 +108,7 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
         }
         final VirtualThreadAwareLock lock = VirtualThreadAwareLock.asVirtualThreadAware(session.getLockInstance());
         final String name = "blocking-dialogs-ui-fiber-" + fiberCount.incrementAndGet();
-        new SessionCarrier(session, name, () -> {
-            VirtualThreadAwareLock.enterUIVirtualThread(lock);
-            try {
-                body.run();
-            } finally {
-                VirtualThreadAwareLock.exitUIVirtualThread();
-            }
-        }).fiber.start();
+        new SessionCarrier(session, lock, name, body).fiber.start();
     }
 
     @Override
@@ -217,13 +210,18 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
          */
         volatile boolean releasing;
 
-        SessionCarrier(VaadinSession session, String name, Runnable body) {
+        /**
+         * @param lock {@code session}'s lock
+         */
+        SessionCarrier(VaadinSession session, VirtualThreadAwareLock lock, String name, Runnable body) {
             this.session = session;
             fiber = LoomUtils.newVirtualThread(this, name, () -> {
                 current.set(this);
+                VirtualThreadAwareLock.enterUIVirtualThread(lock);
                 try {
                     body.run();
                 } finally {
+                    VirtualThreadAwareLock.exitUIVirtualThread();
                     current.remove();
                 }
             });
@@ -231,14 +229,11 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
         }
 
         /**
-         * @throws IllegalStateException if the calling thread isn't a UI fiber of this runner.
+         * The carrier of the calling thread, which must be a UI fiber of this runner.
          */
         static SessionCarrier current() {
-            final @Nullable SessionCarrier carrier = current.get();
-            if (carrier == null) {
-                throw new IllegalStateException(Thread.currentThread() + " isn't a UI fiber of the loom runner");
-            }
-            return carrier;
+            return Objects.requireNonNull(current.get(),
+                    () -> Thread.currentThread() + " isn't a UI fiber of the loom runner");
         }
 
         /**

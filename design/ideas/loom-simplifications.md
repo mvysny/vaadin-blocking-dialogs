@@ -1,17 +1,12 @@
 # Simplifications in `vaadin-uifiber-loom`
 
 A review pass over the loom runner found no layering to remove, only small cleanups. Replacing
-`awaitUninterruptibly` with `CompletableFuture.join()` (23d865d) and tidying `VirtualThreadAwareLock`'s
-pretend mode are already done; the rest follow,
+`awaitUninterruptibly` with `CompletableFuture.join()` (23d865d), tidying `VirtualThreadAwareLock`'s
+pretend mode, and one wrapper around the UI fiber's body are already done; the rest follow,
 safe and mechanical ones first. Check with `./gradlew`.
 
 ## Main code
 
-- **The body is wrapped twice**: `runUntilFirstPark` wraps it in `enterUIVirtualThread` /
-  `exitUIVirtualThread`, and `SessionCarrier`'s constructor wraps it again in
-  `current.set` / `remove`. Pass the lock into `SessionCarrier` and do both in one try/finally.
-- **`SessionCarrier.current()` has a throw that can't be reached**: `newCompletable` has already
-  checked `isUIVirtualThreadOf`. `Objects.requireNonNull(current.get())` would do.
 - **`LoomUtils` repeats the same lazy-caching pattern twice**: the `volatile` `builderConstructor`
   and `runContinuation` are each resolved on first use, each wrapping failure in an ISE naming
   `--add-opens`. `checkAvailable()` runs in the runner's constructor anyway, so one helper for
