@@ -40,7 +40,10 @@ in step, so there is none, and no backstop either. The verdict waits for the det
 response, because F5 on a `@PreserveOnRefresh` route detaches the view before it re-attaches it
 (`R_preserve_migration`). Why not a `VaadinRequestInterceptor.requestEnd` hook for that verdict: it
 needs a `VaadinServiceInitListener` shipped in our jar, and still a fallback for a destroy outside a
-request. Why no anchorless `parkAndAwait`: a wait that names no owner can only leak. The cost: a
+request. Why no anchorless `parkAndAwait`: a wait that names no owner can only leak. Why no
+interrupt at session destroy for a bare park: loom holds the lock through it
+(`D_loom_holds_the_lock`), so the destroy never runs, and the lock-hold watchdog has already named
+the line. The cost: a
 closed `@PreserveOnRefresh` tab is noticed only at heartbeat expiry — free under loom, a held worker
 thread under session-unlock.
 
