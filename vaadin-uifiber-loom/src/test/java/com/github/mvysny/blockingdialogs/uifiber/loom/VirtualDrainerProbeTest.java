@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -56,12 +57,20 @@ public class VirtualDrainerProbeTest {
 
     /**
      * A platform thread that takes the session lock the way a request does, logs, and lets it go.
+     * <p>
+     * The drainer logs its release only once {@code access()} returns, after the lock is already free,
+     * so the request waits for that entry before logging its own; otherwise the two race.
      */
-    private Thread queueARequest(VaadinSession session) {
+    private Thread queueARequest(VaadinSession session, CountDownLatch drainerReleased) {
         final Thread request = Thread.ofPlatform().start(() -> {
             session.lock();
             try {
+                if (!drainerReleased.await(5, TimeUnit.SECONDS)) {
+                    log.add("request took the lock before the drainer returned");
+                }
                 log.add("request");
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             } finally {
                 session.unlock();
             }
@@ -82,14 +91,16 @@ public class VirtualDrainerProbeTest {
         final UI ui = UI.getCurrent();
         final VaadinSession session = VaadinSession.getCurrent();
         final Thread[] request = new Thread[1];
+        final CountDownLatch drainerReleased = new CountDownLatch(1);
         session.unlock();
         try {
             Thread.ofVirtual().start(() -> {
                 ui.access(() -> {
-                    request[0] = queueARequest(session);
+                    request[0] = queueARequest(session, drainerReleased);
                     body.run();
                 });
                 log.add("drainer released");
+                drainerReleased.countDown();
             }).join();
             request[0].join(TimeUnit.SECONDS.toMillis(5));
         } finally {
