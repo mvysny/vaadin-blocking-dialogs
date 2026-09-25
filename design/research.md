@@ -139,3 +139,25 @@ above and cut the fat — a marker already says where a claim came from.
   and starts the blocking action a second time. **[verified, same]**
 - A contended `ReentrantLock`, `BlockingQueue.take()` and `synchronized` on JDK 24+ unmount too;
   file IO does not (the JDK pins the carrier for it). **[unverified]**
+
+## R_service_init_listeners — `VaadinServiceInitListener`: ServiceLoader finds it under Spring too; a session listener's throw is only logged
+
+- `DefaultInstantiator.getServiceInitListeners()` is `ServiceLoader.load(VaadinServiceInitListener
+  .class, service.getClassLoader())`. **[src, Vaadin 25.2.6; flow 2.4 alike]**
+- `SpringInstantiator` returns those first, then every `VaadinServiceInitListener` bean, then a
+  bridge that publishes `ServiceInitEvent` to `@EventListener`s. **[src, vaadin-spring 25.2.7; the
+  same concat since 12.0, Vaadin 14]**
+- A class both in `META-INF/services` and a `@Component` is two instances, both getting
+  `serviceInit()`; the ServiceLoader one isn't Spring-managed, its `@Autowired` fields `null`. No
+  code path drops a session listener because the file exists. **[src, flow 2.4 and 25.2.6]**
+- In a Spring Boot fat jar the service's classloader sees `BOOT-INF/lib`, so a library jar's
+  `META-INF/services` is found. **[unverified]**
+- A `SessionInitListener` that throws doesn't fail the session: the exception goes to
+  `session.getErrorHandler()` (`DefaultErrorHandler` logs it), and the session and the remaining
+  listeners carry on. **[src, Vaadin 25.2.6 `onVaadinSessionStarted`; 25.3.0 through
+  `VaadinServiceEventBus.fireEvent(event, sessionErrorHandler(session))`]**
+- An `Error` gets past both that catch and `handleRequest`'s, so the request fails. The session is
+  stored before the listeners run, so the next request of that HTTP session finds it and skips
+  them. **[src, Vaadin 25.3.0]**
+- Karibu's `MockVaadin.setup()` fires the session init listeners itself, without that catch, so
+  there the throw fails `setup()`. **[src, Karibu 2.7.3]**

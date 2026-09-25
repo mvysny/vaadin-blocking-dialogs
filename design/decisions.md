@@ -121,7 +121,12 @@ lock (`R_vt_lock_identity`) — the app must subclass something, and a servlet i
 or plain-servlet app already declares. `LoomVaadinServlet` carries no `@WebServlet`, so a library jar
 never claims `/*` behind the app's back; the app's one-line subclass does. An app with a service
 class of its own, Spring's, calls `VirtualThreadAwareLock.wrap()` from its override, and the
-first session refuses an unwrapped lock at init (`SessionLockCheck`), naming both fixes. Why not seed the lock from an
+first request of a session with an unwrapped lock fails at init (`SessionLockCheck`), naming both
+fixes. Why does that check register itself through `META-INF/services`, rather than inside the
+servlet or `wrap()`: there it runs only where the lock is already wrapped, and a check the app must
+register is skipped by the very app that forgot the wrap. Spring finds it too, and one also declared
+as a bean just checks twice (`R_service_init_listeners`). It throws an `Error`, since an
+`Exception` there is only logged. Why not seed the lock from an
 `HttpSessionListener`: it needs the service name up front, loses Vaadin's instrumented lock
 (`SessionLockListener`), relies on the container scanning a `@WebListener` in a library jar (Spring
 Boot doesn't), and `VaadinSession.refreshLock()` forbids swapping the lock later. Why no published

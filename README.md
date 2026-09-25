@@ -42,7 +42,7 @@ The loom runner additionally needs:
       return VirtualThreadAwareLock.wrap(this, wrappedSession, super.getSessionLock(wrappedSession));
   }
   ```
-  Without it, the first session fails to start, naming the fix.
+  Without it, every session's first request fails with an `Error` naming the fix.
 - **Java 24+ at runtime** (it compiles for Java 21). On Java 21-23 a virtual thread that blocks
   inside a `synchronized` block deadlocks the session - see
   [JEP 491](https://openjdk.org/jeps/491) and [vaadin-loom#2](https://github.com/mvysny/vaadin-loom/issues/2) -

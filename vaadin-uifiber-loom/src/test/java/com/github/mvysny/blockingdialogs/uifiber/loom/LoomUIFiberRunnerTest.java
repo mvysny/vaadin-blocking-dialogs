@@ -93,17 +93,21 @@ public class LoomUIFiberRunnerTest {
         }
 
         /**
-         * {@link SessionLockCheck}: the first session fails, before any UI fiber.
+         * {@link SessionLockCheck}: the session's first request fails, before any UI fiber. An
+         * {@link Error}, since Karibu rethrows the {@code Exception} that real Vaadin only logs.
          */
         @Test
         public void refusesAnUnwrappedSessionLockAtSessionInit() {
             MockVaadin.tearDown();
             final Throwable e = assertThrows(Throwable.class, () -> MockVaadin.setup(routes));
             final StringBuilder messages = new StringBuilder();
+            boolean isError = false;
             for (Throwable t = e; t != null; t = t.getCause()) {
                 messages.append(t.getMessage()).append('\n');
+                isError |= t.getClass() == Error.class;
             }
             assertTrue(messages.toString().contains("LoomVaadinServlet"), messages.toString());
+            assertTrue(isError, messages.toString());
         }
 
         @Test
