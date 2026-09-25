@@ -18,7 +18,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -272,11 +271,13 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
          * as on a platform drainer.
          *
          * @implNote Not a handoff that takes the lock once the drainer lets go: the drainer's push
-         * and a queued request would then get in before the UI fiber's segment.
+         * and a queued request would then get in before the UI fiber's segment. {@code join()}, as it
+         * waits even when interrupted - the drainer mustn't let go of the lock meanwhile - and restores
+         * the interrupt flag afterwards.
          */
         private void mount(Runnable continuation) {
             if (Thread.currentThread().isVirtual()) {
-                awaitUninterruptibly(Handoff.POOL.submit(() -> carry(continuation)));
+                CompletableFuture.runAsync(() -> carry(continuation), Handoff.POOL).join();
             } else {
                 carry(continuation);
             }
@@ -295,30 +296,6 @@ public final class LoomUIFiberRunner implements UIFiberRunnerSpi {
                     return;
                 }
                 next = handoff.take();
-            }
-        }
-
-        /**
-         * Waits for {@code segment} even when interrupted: the UI fiber runs on the drainer's lock,
-         * which the drainer mustn't let go meanwhile. The interrupt flag is restored afterwards.
-         */
-        private static void awaitUninterruptibly(Future<?> segment) {
-            boolean interrupted = false;
-            try {
-                while (true) {
-                    try {
-                        segment.get();
-                        return;
-                    } catch (InterruptedException e) {
-                        interrupted = true;
-                    } catch (ExecutionException e) {
-                        throw new IllegalStateException("A UI fiber's continuation failed on its carrier", e.getCause());
-                    }
-                }
-            } finally {
-                if (interrupted) {
-                    Thread.currentThread().interrupt();
-                }
             }
         }
     }
