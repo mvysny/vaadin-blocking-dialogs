@@ -6,6 +6,7 @@
  */
 package com.github.mvysny.blockingdialogs;
 
+import com.github.mvysny.blockingdialogs.uifiber.spi.UIFiberRunnerSpi;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -14,51 +15,55 @@ import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 
 /**
- * {@link BlockingExecutor#get()}: the strategy, looked up once per classloader.
+ * The {@link UIFiberRunnerSpi} on the classpath, found through {@link ServiceLoader} once per
+ * classloader: exactly one, or every call throws.
  *
  * @implNote Cached because every {@code ServiceLoader.load()} re-scans {@code META-INF/services},
- * and {@code get()} runs on every {@code runLater()}. A failure is cached too, as a message rather
+ * and {@link #get()} runs on every {@code runLater()}. A failure is cached too, as a message rather
  * than an exception instance, so each call throws a fresh exception with its own stack trace.
  */
-final class StrategyLoader {
-    private StrategyLoader() {
+final class RunnerLoader {
+    private RunnerLoader() {
     }
 
     /**
-     * The outcome of a lookup: exactly one of {@code executor} and {@code error} is set.
+     * The outcome of a lookup: exactly one of {@code runner} and {@code error} is set.
      */
-    record Result(@Nullable BlockingExecutor executor, @Nullable String error, @Nullable Throwable cause) {
-        BlockingExecutor getOrThrow() {
-            if (executor == null) {
+    record Result(@Nullable UIFiberRunnerSpi runner, @Nullable String error, @Nullable Throwable cause) {
+        UIFiberRunnerSpi getOrThrow() {
+            if (runner == null) {
                 throw new IllegalStateException(error, cause);
             }
-            return executor;
+            return runner;
         }
     }
 
     private static final class Holder {
-        static final Result result = load(BlockingExecutor.class.getClassLoader());
+        static final Result result = load(UIFiberRunnerSpi.class.getClassLoader());
     }
 
-    static BlockingExecutor get() {
+    /**
+     * @throws IllegalStateException if there is none, or more than one - on every call alike.
+     */
+    static UIFiberRunnerSpi get() {
         return Holder.result.getOrThrow();
     }
 
     static Result load(ClassLoader classLoader) {
-        final List<BlockingExecutor> found = new ArrayList<>();
+        final List<UIFiberRunnerSpi> found = new ArrayList<>();
         try {
-            ServiceLoader.load(BlockingExecutor.class, classLoader).forEach(found::add);
+            ServiceLoader.load(UIFiberRunnerSpi.class, classLoader).forEach(found::add);
         } catch (ServiceConfigurationError e) {
             // a provider's constructor failing is the cause; its message is the one naming the fix
             final String reason = e.getCause() == null ? e.getMessage() : e.getMessage() + ": " + e.getCause().getMessage();
-            return new Result(null, "A blocking strategy on the classpath failed to load: " + reason, e);
+            return new Result(null, "A UI fiber runner on the classpath failed to load: " + reason, e);
         }
         if (found.isEmpty()) {
-            return new Result(null, "No blocking strategy on the classpath: add one, such as"
+            return new Result(null, "No UI fiber runner on the classpath: add one, such as"
                     + " vaadin-uifiber-loom", null);
         }
         if (found.size() > 1) {
-            return new Result(null, found.size() + " blocking strategies on the classpath, "
+            return new Result(null, found.size() + " UI fiber runners on the classpath, "
                     + found.stream().map(it -> it.getClass().getName()).toList()
                     + ": keep exactly one", null);
         }

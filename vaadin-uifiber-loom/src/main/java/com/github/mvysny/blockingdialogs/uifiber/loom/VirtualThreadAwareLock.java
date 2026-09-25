@@ -112,6 +112,14 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
     }
 
     /**
+     * Whether the calling thread is a UI fiber's virtual thread of the session {@code sessionLock}
+     * belongs to.
+     */
+    static boolean isUIVirtualThreadOf(Lock sessionLock) {
+        return sessionLock instanceof VirtualThreadAwareLock lock && lock.isPretending();
+    }
+
+    /**
      * @throws IllegalStateException if {@code sessionLock} isn't a {@link VirtualThreadAwareLock},
      *                               naming the fix.
      */

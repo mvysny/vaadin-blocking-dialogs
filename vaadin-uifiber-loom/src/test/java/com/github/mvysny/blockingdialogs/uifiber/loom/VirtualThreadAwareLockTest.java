@@ -6,7 +6,7 @@
  */
 package com.github.mvysny.blockingdialogs.uifiber.loom;
 
-import com.github.mvysny.blockingdialogs.BlockingDialogs;
+import com.github.mvysny.blockingdialogs.UIFibers;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
 import com.github.mvysny.kaributesting.v10.Routes;
 import com.github.mvysny.kaributesting.v10.mock.MockedUI;
@@ -165,7 +165,7 @@ public class VirtualThreadAwareLockTest {
         final VaadinSession session = VaadinSession.getCurrent();
         final AtomicReference<Thread> child = new AtomicReference<>();
         final AtomicBoolean gotTheLock = new AtomicBoolean();
-        BlockingDialogs.runLater(() -> child.set(Thread.ofVirtual().start(() -> {
+        UIFibers.runLater(() -> child.set(Thread.ofVirtual().start(() -> {
             session.lock();
             try {
                 gotTheLock.set(session.hasLock());
@@ -193,7 +193,7 @@ public class VirtualThreadAwareLockTest {
     @Test
     public void runawayContinuationIsRejectedRatherThanOverflowingTheStack() {
         final VaadinSession session = VaadinSession.getCurrent();
-        BlockingDialogs.runLater(() -> {
+        UIFibers.runLater(() -> {
             VirtualThreadAwareLock.exitUIVirtualThread();
             session.lock();
         });
@@ -220,7 +220,7 @@ public class VirtualThreadAwareLockTest {
      */
     private void runInUIFiber(Runnable body) {
         final AtomicBoolean finished = new AtomicBoolean();
-        BlockingDialogs.runLater(() -> {
+        UIFibers.runLater(() -> {
             try {
                 body.run();
             } finally {

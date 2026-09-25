@@ -6,10 +6,9 @@
  */
 package com.github.mvysny.blockingdialogs;
 
-import com.vaadin.flow.component.Component;
+import com.github.mvysny.blockingdialogs.uifiber.spi.Completable;
 import com.vaadin.flow.component.ComponentEvent;
 import com.vaadin.flow.component.ComponentEventListener;
-import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.shared.Registration;
@@ -19,13 +18,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
 
 /**
- * Blocking dialogs, the way Swing's {@code JOptionPane} does them: start a UI fiber with
- * {@link #runLater}, and inside it a dialog call returns the user's answer.
+ * Blocking dialogs, the way Swing's {@code JOptionPane} does them: inside a UI fiber, started with
+ * {@link UIFibers#runLater}, a dialog call returns the user's answer.
  * <pre>{@code
- * button.addClickListener(e -> BlockingDialogs.runLater(() -> {
+ * button.addClickListener(e -> UIFibers.runLater(() -> {
  *     ConfirmDialog dialog = new ConfirmDialog();
  *     dialog.setText("Delete " + file + "?");
  *     dialog.setCancelable(true);
@@ -34,71 +32,10 @@ import java.util.function.Supplier;
  *     }
  * }));
  * }</pre>
- * Any other wait is {@link #parkAndAwait}, anchored to the component whose life it belongs to: a Save
- * button's progress bar, a background job's dialog.
- * <p>
- * Every method is its namesake on {@link BlockingExecutor#get()}, the strategy on the classpath.
- * <p>
- * <b>Cancellation means "the wait is dead", nothing else.</b> A user-facing Cancel is an answer: the
- * dialog completes its future with a cancel value. So a progress dialog's Cancel must not cancel
- * the future the UI fiber awaits, or the UI fiber ends silently; await an outcome future, and let Cancel
- * stop the job and complete the outcome.
+ * Any other wait is {@link UIFibers#parkAndAwait}, anchored to the component whose life it belongs to.
  */
 public final class BlockingDialogs {
     private BlockingDialogs() {
-    }
-
-    /**
-     * {@link BlockingExecutor#runLater}.
-     */
-    public static void runLater(Runnable body) {
-        BlockingExecutor.get().runLater(body);
-    }
-
-    /**
-     * {@link BlockingExecutor#runUntilPark}.
-     */
-    public static void runUntilPark(Runnable body) {
-        BlockingExecutor.get().runUntilPark(body);
-    }
-
-    /**
-     * {@link BlockingExecutor#access}, for background threads.
-     */
-    public static void access(UI ui, Runnable body) {
-        BlockingExecutor.get().access(ui, body);
-    }
-
-    /**
-     * {@link BlockingExecutor#accessSynchronously(UI, Runnable)}.
-     */
-    public static void accessSynchronously(UI ui, Runnable body) {
-        BlockingExecutor.get().accessSynchronously(ui, body);
-    }
-
-    /**
-     * {@link BlockingExecutor#accessSynchronously(UI, Supplier)}.
-     */
-    public static <T extends @Nullable Object> T accessSynchronously(UI ui, Supplier<T> body) {
-        return BlockingExecutor.get().accessSynchronously(ui, body);
-    }
-
-    /**
-     * {@link BlockingExecutor#parkAndAwait}.
-     *
-     * @throws IllegalStateException outside a UI fiber.
-     */
-    public static <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
-        return BlockingExecutor.get().parkAndAwait(anchor, future);
-    }
-
-    /**
-     * {@link BlockingExecutor#checkInUIFiber()}.
-     *
-     * @throws IllegalStateException outside a UI fiber.
-     */
-    public static void checkInUIFiber() {
-        BlockingExecutor.get().checkInUIFiber();
     }
 
     /**
@@ -123,11 +60,10 @@ public final class BlockingDialogs {
      */
     public static <T extends @Nullable Object> T showAndAwait(Dialog dialog, CompletableFuture<T> answer) {
         Objects.requireNonNull(answer);
-        final BlockingExecutor executor = BlockingExecutor.get();
-        executor.checkInUIFiber();
+        UIFibers.checkInUIFiber();
         dialog.open();
         try {
-            return executor.parkAndAwait(dialog, answer);
+            return UIFibers.parkAndAwait(dialog, answer);
         } finally {
             dialog.close();
         }
@@ -153,9 +89,7 @@ public final class BlockingDialogs {
      * @throws CancellationException if the dialog detached without an answer.
      */
     public static ConfirmDialogOutcome showAndAwait(ConfirmDialog dialog) {
-        final BlockingExecutor executor = BlockingExecutor.get();
-        executor.checkInUIFiber();
-        final CompletableFuture<ConfirmDialogOutcome> answer = new CompletableFuture<>();
+        final Completable<ConfirmDialogOutcome> answer = UIFibers.newCompletable();
         final List<Registration> listeners = List.of(
                 dialog.addConfirmListener(new Answer<>(answer, ConfirmDialogOutcome.CONFIRM)),
                 dialog.addRejectListener(new Answer<>(answer, ConfirmDialogOutcome.REJECT)),
@@ -164,7 +98,7 @@ public final class BlockingDialogs {
                 dialog.addClosedListener(new Answer<>(answer, ConfirmDialogOutcome.CANCEL)));
         dialog.open();
         try {
-            return executor.parkAndAwait(dialog, answer);
+            return UIFibers.awaitAnchored(dialog, answer, null);
         } finally {
             dialog.close();
             listeners.forEach(Registration::remove);
@@ -172,17 +106,18 @@ public final class BlockingDialogs {
     }
 
     /**
-     * Completes the answer with a fixed outcome, the first event winning.
+     * Wakes the UI fiber with a fixed outcome, the first event winning. A dialog event holds the
+     * session lock, so it wakes the UI fiber directly.
      *
-     * @implNote A class with a transient future rather than a lambda, which would drag the
-     * non-serializable future into the session's serialized form while the dialog is open.
+     * @implNote A class with a transient wake-up rather than a lambda, which would drag the
+     * non-serializable wake-up into the session's serialized form while the dialog is open.
      */
     private static final class Answer<E extends ComponentEvent<?>> implements ComponentEventListener<E> {
         @Nullable
-        private final transient CompletableFuture<ConfirmDialogOutcome> answer;
+        private final transient Completable<ConfirmDialogOutcome> answer;
         private final ConfirmDialogOutcome outcome;
 
-        Answer(CompletableFuture<ConfirmDialogOutcome> answer, ConfirmDialogOutcome outcome) {
+        Answer(Completable<ConfirmDialogOutcome> answer, ConfirmDialogOutcome outcome) {
             this.answer = answer;
             this.outcome = outcome;
         }

@@ -2,4 +2,4 @@
 #
 # Licensed under the MIT License. See the LICENSE file in the project root
 # for the full license text.
-com.github.mvysny.blockingdialogs.uifiber.loom.LoomBlockingExecutor
+com.github.mvysny.blockingdialogs.uifiber.loom.LoomUIFiberRunner

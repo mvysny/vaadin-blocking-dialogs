@@ -5,7 +5,8 @@
  * for the full license text.
  */
 /**
- * The strategy-neutral API app code blocks on a dialog with; start at {@link BlockingDialogs}.
+ * The runner-neutral API app code blocks on a dialog with: {@link UIFibers} runs and parks UI fibers,
+ * {@link BlockingDialogs} shows a dialog and waits for the answer.
  */
 @NullMarked
 package com.github.mvysny.blockingdialogs;

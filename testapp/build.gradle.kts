@@ -10,6 +10,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":vaadin-blocking-dialogs"))
     implementation(project(":vaadin-uifiber-loom"))
 
     // Vaadin

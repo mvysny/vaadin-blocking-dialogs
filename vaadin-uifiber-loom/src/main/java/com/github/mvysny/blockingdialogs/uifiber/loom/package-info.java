@@ -5,7 +5,7 @@
  * for the full license text.
  */
 /**
- * The virtual-thread UI fiber strategy; start at {@link LoomBlockingExecutor}.
+ * The virtual-thread UI fiber runner; start at {@link LoomUIFiberRunner}.
  */
 @NullMarked
 package com.github.mvysny.blockingdialogs.uifiber.loom;

@@ -6,7 +6,7 @@
  */
 package com.github.mvysny.blockingdialogs.uifiber.loom;
 
-import com.github.mvysny.blockingdialogs.BlockingDialogs;
+import com.github.mvysny.blockingdialogs.UIFibers;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
 import com.github.mvysny.kaributesting.v10.Routes;
 import com.github.mvysny.kaributesting.v10.mock.MockedUI;
@@ -101,9 +101,9 @@ public class VirtualDrainerProbeTest {
     @Test
     public void aFiberStartDrainedByAVirtualThreadRunsBeforeTheDrainerReleases() throws InterruptedException {
         final CompletableFuture<String> answer = new CompletableFuture<>();
-        drainOnAVirtualThread(() -> BlockingDialogs.runLater(() -> {
+        drainOnAVirtualThread(() -> UIFibers.runLater(() -> {
             log.add("segment");
-            log.add("resumed: " + BlockingDialogs.parkAndAwait(UI.getCurrent(), answer));
+            log.add("resumed: " + UIFibers.parkAndAwait(UI.getCurrent(), answer));
         }));
         assertEquals(List.of("segment", "drainer released", "request"), log);
 
@@ -116,7 +116,7 @@ public class VirtualDrainerProbeTest {
     @Test
     public void aWakeUpDrainedByAVirtualThreadRunsBeforeTheDrainerReleases() throws InterruptedException {
         final CompletableFuture<String> answer = new CompletableFuture<>();
-        BlockingDialogs.runLater(() -> log.add("resumed: " + BlockingDialogs.parkAndAwait(UI.getCurrent(), answer)));
+        UIFibers.runLater(() -> log.add("resumed: " + UIFibers.parkAndAwait(UI.getCurrent(), answer)));
         MockVaadin.clientRoundtrip();
         assertEquals(List.of(), log, "parked");
 
@@ -129,11 +129,11 @@ public class VirtualDrainerProbeTest {
     public void aCascadeSettlesInTheVirtualThreadsDrain() throws InterruptedException {
         final CompletableFuture<String> answerA = new CompletableFuture<>();
         final CompletableFuture<String> answerB = new CompletableFuture<>();
-        BlockingDialogs.runLater(() -> {
-            log.add("A resumed: " + BlockingDialogs.parkAndAwait(UI.getCurrent(), answerA));
+        UIFibers.runLater(() -> {
+            log.add("A resumed: " + UIFibers.parkAndAwait(UI.getCurrent(), answerA));
             answerB.complete("from A");
         });
-        BlockingDialogs.runLater(() -> log.add("B resumed: " + BlockingDialogs.parkAndAwait(UI.getCurrent(), answerB)));
+        UIFibers.runLater(() -> log.add("B resumed: " + UIFibers.parkAndAwait(UI.getCurrent(), answerB)));
         MockVaadin.clientRoundtrip();
         assertEquals(List.of(), log, "both parked");
 
@@ -150,9 +150,9 @@ public class VirtualDrainerProbeTest {
         session.unlock();
         try {
             Thread.ofVirtual().start(() -> ui.accessSynchronously(() -> {
-                BlockingDialogs.runUntilPark(() -> {
+                UIFibers.runUntilPark(() -> {
                     log.add("segment");
-                    log.add("resumed: " + BlockingDialogs.parkAndAwait(ui, answer));
+                    log.add("resumed: " + UIFibers.parkAndAwait(ui, answer));
                 });
                 log.add("runUntilPark returned");
             })).join();

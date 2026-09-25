@@ -10,7 +10,7 @@ plugins {
 }
 
 dependencies {
-    api(project(":vaadin-blocking-dialogs"))
+    api(project(":vaadin-uifiber-spi"))
     implementation(libs.slf4j.api)
 
     // the app brings its own Vaadin
@@ -21,6 +21,8 @@ dependencies {
     testFixturesApi(libs.karibu.testing)
     testFixturesCompileOnly(libs.vaadin.core)
 
+    // its tests drive the runner through the API, as an app does
+    testImplementation(project(":vaadin-blocking-dialogs"))
     testImplementation(libs.vaadin.core)
     testImplementation(libs.junit)
     testImplementation(libs.slf4j.simple)

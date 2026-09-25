@@ -8,6 +8,7 @@ package com.example.blockingdialogs;
 
 import com.github.mvysny.blockingdialogs.BlockingDialogs;
 import com.github.mvysny.blockingdialogs.ConfirmDialogOutcome;
+import com.github.mvysny.blockingdialogs.UIFibers;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.notification.Notification;
@@ -20,7 +21,7 @@ import com.vaadin.flow.router.Route;
 @Route("")
 public class MainView extends VerticalLayout {
     public MainView() {
-        add(new Button("Blocking dialog", e -> BlockingDialogs.runLater(() -> {
+        add(new Button("Blocking dialog", e -> UIFibers.runLater(() -> {
             if (confirm("Are you sure?")) {
                 Notification.show(confirm("Are you really sure?") ? "Yes you're sure" : "Yes but no");
             } else {

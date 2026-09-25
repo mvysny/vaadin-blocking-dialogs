@@ -11,17 +11,26 @@ plugins {
 dependencies {
     // Java has no nullable types; every package is @NullMarked
     api(libs.jspecify)
+    implementation(project(":vaadin-uifiber-spi"))
     implementation(libs.slf4j.api)
 
     // the app brings its own Vaadin
     compileOnly(libs.vaadin.core)
     compileOnly(libs.jakarta.servlet)
 
+    // the API is tested on the real loom runner
+    testImplementation(project(":vaadin-uifiber-loom"))
+    testImplementation(testFixtures(project(":vaadin-uifiber-loom")))
     testImplementation(libs.vaadin.core)
     testImplementation(libs.karibu.testing)
     testImplementation(libs.junit)
     testImplementation(libs.slf4j.simple)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+// the loom runner reflects into java.lang.VirtualThread and ThreadBuilders$VirtualThreadBuilder (JDK-8308541)
+tasks.withType<Test> {
+    jvmArgs(listOf("--add-opens", "java.base/java.lang=ALL-UNNAMED"))
 }
 
 @Suppress("UNCHECKED_CAST")

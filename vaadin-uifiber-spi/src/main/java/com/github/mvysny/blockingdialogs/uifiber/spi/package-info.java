@@ -5,7 +5,7 @@
  * for the full license text.
  */
 /**
- * What a UI fiber strategy implements and no app calls; start at {@link UIFiberRunnerSpi}.
+ * What a UI fiber runner implements and no app calls; start at {@link UIFiberRunnerSpi}.
  */
 @NullMarked
 package com.github.mvysny.blockingdialogs.uifiber.spi;

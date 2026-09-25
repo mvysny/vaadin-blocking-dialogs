@@ -8,6 +8,7 @@ package com.github.mvysny.blockingdialogs.uifiber.loom;
 
 import com.github.mvysny.blockingdialogs.BlockingDialogs;
 import com.github.mvysny.blockingdialogs.ConfirmDialogOutcome;
+import com.github.mvysny.blockingdialogs.UIFibers;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
 import com.github.mvysny.kaributesting.v10.Routes;
 import com.github.mvysny.kaributesting.v10.mock.MockedUI;
@@ -105,7 +106,7 @@ public class IoUnmountProbeTest {
         final Button other = new Button("Another request", e -> clicks.incrementAndGet());
         UI.getCurrent().add(other);
         try (Wire wire = new Wire()) {
-            BlockingDialogs.runLater(() -> {
+            UIFibers.runLater(() -> {
                 log.add("before IO: clicks=" + clicks.get());
                 wire.read();
                 log.add("after IO: clicks=" + clicks.get());
@@ -125,7 +126,7 @@ public class IoUnmountProbeTest {
         final AtomicInteger clicks = new AtomicInteger();
         final Button other = new Button("Another request", e -> clicks.incrementAndGet());
         UI.getCurrent().add(other);
-        BlockingDialogs.runLater(() -> {
+        UIFibers.runLater(() -> {
             log.add("before sleep: clicks=" + clicks.get());
             try {
                 Thread.sleep(200);
@@ -150,7 +151,7 @@ public class IoUnmountProbeTest {
         final VaadinSession session = VaadinSession.getCurrent();
         final AtomicBoolean otherThreadGotTheLock = new AtomicBoolean();
         try (Wire wire = new Wire()) {
-            BlockingDialogs.runLater(() -> {
+            UIFibers.runLater(() -> {
                 log.add("before IO");
                 wire.read();
                 log.add("after IO");
@@ -189,7 +190,7 @@ public class IoUnmountProbeTest {
     public void aSocketReadBeforeTheFirstDialogLetsADoubleClickIn() throws Exception {
         try (Wire wire = new Wire()) {
             final AtomicInteger uiFibersStarted = new AtomicInteger();
-            final Button save = new Button("Save", e -> BlockingDialogs.runLater(() -> {
+            final Button save = new Button("Save", e -> UIFibers.runLater(() -> {
                 uiFibersStarted.incrementAndGet();
                 wire.read();   // "does the file exist?" against a remote store
                 final ConfirmDialog dialog = new ConfirmDialog();
