@@ -113,8 +113,9 @@ above and cut the fat — a marker already says where a claim came from.
   **[verified 2026-09-24, Vaadin 25.3.0, Karibu 2.7.3]**
 - When the window name is not known yet, the navigation first fetches it in a round trip; until
   then the chain stays on the old UI. **[src, Vaadin 25.3.0]**
-- The unload beacon does not close the old UI of a preserved view. **[unverified — read for
-  SB-Emulators, not re-read here]**
+- The unload beacon does not close the old UI of a preserved view, so a closed tab of a preserved
+  route lingers until the missed-heartbeat timeout (`R_session_destroy_detaches`), a UI fiber
+  parked in it too. **[unverified in a browser; Karibu 2.7.3's `MockBrowser.closeTab` models it]**
 - Karibu 2.7.1+ reproduces this order in `MockPage.reload()` (karibu-testing#207). **[docs]**
 
 ## R_session_destroy_detaches — session destroy detaches every UI's tree

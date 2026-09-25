@@ -19,7 +19,7 @@ such a hard thing to do in a web framework.
 | `vaadin-uifiber-loom` | The virtual-thread runner, grown out of the [vaadin-loom](https://github.com/mvysny/vaadin-loom) prototype. |
 | `vaadin-uifiber-session-unlock` | Planned: parks an ordinary platform thread with the Vaadin session lock released. |
 
-Group id: `com.github.mvysny.vaadin-blocking-dialogs`. The `testapp` module is a demo, not published.
+Group id: `com.github.mvysny.vaadin-blocking-dialogs`. The `testapp-*` modules are the demo, not published.
 
 ## Installation
 
@@ -121,10 +121,13 @@ ended.
 ## Running the demo
 
 ```bash
-./gradlew :testapp:run
+./gradlew :testapp-loom:run
 ```
 
-Then open [http://localhost:8080](http://localhost:8080).
+Then open [http://localhost:8080](http://localhost:8080): "Save changes before closing?", a delete
+loop with Yes to all, a background import behind a progress dialog, F5 with a dialog open, and
+the edge cases - each page shows its own source, blocking beside callbacks, and a "Try this" list
+of what to check by hand.
 
 ## Credits
 

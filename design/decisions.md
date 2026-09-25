@@ -222,3 +222,16 @@ body taking `cache` too — never ends; Swing's EDT would re-enter it, being one
 session lock is spared: `VirtualThreadAwareLock` makes the UI fiber its carrier's co-owner. Why a
 WARN watchdog (`LOCK_HOLD_WARN_SECONDS`) rather than thread dumps: the JVM sees no Java-level
 cycle, and the stuck line sits on a virtual thread `jstack` omits.
+
+## D_demo_per_runner — Why is the demo one shared module plus a thin app per runner, its tests an abstract class each app extends, rather than one app, or a copy per runner?
+
+A classpath holds one runner (`D_spi_exactly_one`), so each runner needs its own app; a copy of
+the demo per app would drift, and the demo is the system test of every runner. So the routes live
+in `testapp-common`, on the API alone (**One API, any runner** made visible), and each app is
+`Main`, its servlet and its runner jar. The tests live in `testapp-common`'s test fixtures, as the
+abstract `DemoTest` whose one abstract method returns the runner's Karibu servlet; each app has
+one subclass. Gradle runs only a module's own test classes, and JUnit resolves the inherited
+`@Nested` scenario classes from that subclass, so every app runs every test. Why not a JUnit
+`@Suite` per app plus a `ServiceLoader` for the servlet: a new dependency, and a missing
+`META-INF/services` entry fails at run time, where a missing `createServlet` fails to compile.
+Why not one subclass per scenario per app: an app could forget one.
