@@ -70,9 +70,13 @@ public interface UIFiberRunnerSpi {
     void runUntilFirstPark(VaadinSession session, Runnable body);
 
     /**
-     * A new one-shot wake-up for a UI fiber of {@code session} to park on. Called by that fiber.
+     * A new one-shot wake-up for the calling UI fiber to park on.
      *
-     * @param <R> the type of the value the fiber is woken with.
+     * @param session the calling fiber's session.
+     * @param <R>     the type of the value the fiber is woken with.
+     * @return a {@link Completable} only the calling fiber may {@link Completable#park()} on.
+     * @throws IllegalStateException if the caller isn't a running UI fiber of {@code session} - every
+     *                               runner checks, as for {@link #runUntilFirstPark}.
      */
     <R> Completable<R> newCompletable(VaadinSession session);
 }

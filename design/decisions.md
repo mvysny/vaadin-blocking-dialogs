@@ -167,8 +167,9 @@ a parked fiber isn't running, and the scripted test runner plays the next click 
 runner keeps a flag of its own, since `runUntilFirstPark` must refuse a call from inside a fiber,
 but the API doesn't ask it. Asking would leave one source of truth: a runner bug would send the API
 down the wrong branch and silence the runner's own check with it — odd behaviour, no exception.
-With two flags set independently, an API bug that starts a fiber from inside one meets the
-runner's `IllegalStateException`. Both rest on the SPI's promise that a fiber keeps one thread
+With two flags set independently, a disagreement either way meets the runner's
+`IllegalStateException`: `runUntilFirstPark` refuses a caller inside a fiber, `newCompletable()`
+and `park()` one outside. Both rest on the SPI's promise that a fiber keeps one thread
 from start to end, which the `CurrentInstance`s need anyway. The cost: two thread-locals, and no
 runner mounting a raw `Continuation` on whichever carrier is free — which would strand
 `UI.getCurrent()` on the old carrier anyway.

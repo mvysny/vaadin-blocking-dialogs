@@ -57,6 +57,8 @@ public interface Completable<R> {
      * @throws CancellationException if {@link #fail} got one: the wait is dead.
      * @throws ExecutionException    if {@link #fail} got any other cause, which it wraps.
      * @throws InterruptedException  if the fiber's thread was interrupted while waiting.
+     * @throws IllegalStateException if the caller isn't the running UI fiber that made this, or this was
+     *                               parked on before - every runner checks, before releasing anything.
      */
     @Nullable
     R park() throws ExecutionException, InterruptedException;
