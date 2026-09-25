@@ -31,9 +31,9 @@ Every fact lives in exactly one of these; the others link to it.
 - **Vaadin is `compileOnly` in the published modules.** A bundled Vaadin clashes with the app's own version.
 - **Every app and test serving a blocking dialog has `@Push`.** Without it the dialog never reaches the browser while the code is blocked; see `R_unlock_pushes`.
 - **Loom: HTTP requests are served by platform threads**, until virtual ones are checked in a real container: a continuation can't mount on a virtual one (`R_vt_scheduler`), so a platform thread carries each segment while the request thread waits.
-- **Loom: every `VaadinService` routes `getSessionLock()` through `VirtualThreadAwareLock.wrap()`** — the testapp's servlet extends `LoomVaadinServlet`, Karibu tests use `MockVirtualThreadAwareServlet`. Without it each session's first request fails at init (`SessionLockCheck`), since a UI virtual thread taking the lock would deadlock its session; see `R_vt_lock_identity`.
+- **Loom: every `VaadinService` routes `getSessionLock()` through `VirtualThreadAwareLock.wrap()`** — `testapp-loom`'s servlet extends `LoomVaadinServlet`, Karibu tests use `MockVirtualThreadAwareServlet`. Without it each session's first request fails at init (`SessionLockCheck`), since a UI virtual thread taking the lock would deadlock its session; see `R_vt_lock_identity`.
 - **Loom: CI's JDK 21 job passes `-Dblockingdialogs.uifiber.loom.allowPinningJdk=true`**, which the root build forwards to every test JVM; without it the runner refuses to start there (`D_loom_jdk_gate`).
-- **Loom: every JVM running it has `--add-opens java.base/java.lang=ALL-UNNAMED`** — tests, `:testapp:run`, the distribution. The scheduler reflection fails without it; see `R_vt_scheduler`.
+- **Loom: every JVM running it has `--add-opens java.base/java.lang=ALL-UNNAMED`** — tests, `:testapp-loom:run`, the distribution. The scheduler reflection fails without it; see `R_vt_scheduler`.
 - **Loom: a test that parks inside `synchronized` stays `@EnabledForJreRange(minVersion = 24)` while CI runs JDK 21.** On 21-23 it does not fail, it hangs the test JVM; see `R_vt_pinning`.
 
 ## Module map
@@ -41,7 +41,8 @@ Every fact lives in exactly one of these; the others link to it.
 - `vaadin-blocking-dialogs` — the runner-neutral API app code is written against, built on the SPI; published.
 - `vaadin-uifiber-spi` — `UIFiberRunnerSpi`, what a runner implements and no app calls; published. See `D_spi_split`.
 - `vaadin-uifiber-loom` — the virtual-thread runner, on the SPI alone, ported from `../vaadin-loom`; published. Its test fixtures (`MockVirtualThreadAwareServlet`) are not; the API's tests run on it.
-- `testapp` — Vaadin Boot demo on the loom runner, one app per runner since a classpath holds one (`D_spi_exactly_one`); never published.
+- `testapp-common` — the demo's routes and components on the API alone, and in its test fixtures `DemoTest`, every demo test; never published. See `D_demo_per_runner`.
+- `testapp-loom` — the demo as a Vaadin Boot app on the loom runner: `Main`, its servlet, and `LoomDemoTest extends DemoTest`; one app per runner since a classpath holds one (`D_spi_exactly_one`); never published.
 
 ## Conventions
 
@@ -59,12 +60,12 @@ Every fact lives in exactly one of these; the others link to it.
 
 - `./gradlew` — clean + build (the default tasks): every module's tests and `design/verify_design_tripwires.sh`. CI runs it on push and PR in production mode, JDK 21 and 25 × Oracle, Corretto, Temurin, plus the tripwire as a job of its own (`.github/workflows/gradle.yml`).
 - `./gradlew :vaadin-uifiber-loom:test --tests "*SomeTest"` — one test class by pattern.
-- `./gradlew :testapp:run` — the demo in embedded Jetty, http://localhost:8080.
+- `./gradlew :testapp-loom:run` — the demo in embedded Jetty, http://localhost:8080.
 - `./gradlew clean build publish closeAndReleaseStagingRepositories` — release to Maven Central; the full steps are in `CONTRIBUTING.md`.
 
 ## Skills this project follows
 
-- **Component-oriented:** self-sufficient components that reach services directly, no MVC layers; the `cop` skill has the rules. Read it before designing the testapp's components.
+- **Component-oriented:** self-sufficient components that reach services directly, no MVC layers; the `cop` skill has the rules. Read it before designing the demo's components.
 - **Karibu-Testing:** browserless Vaadin tests with `MockVaadin`, `_get` / `LocatorJ` lookups; the `karibu-testing` skill has the helpers.
 - **Ideas folder:** one idea per file in `design/ideas/`, `Q_` slugs for open questions, deleted once acted on; the `ideas-folder` skill has the graduation procedure.
 

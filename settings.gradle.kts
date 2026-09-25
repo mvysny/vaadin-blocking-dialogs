@@ -8,5 +8,6 @@ include(
     "vaadin-blocking-dialogs",
     "vaadin-uifiber-spi",
     "vaadin-uifiber-loom",
-    "testapp",
+    "testapp-common",
+    "testapp-loom",
 )
