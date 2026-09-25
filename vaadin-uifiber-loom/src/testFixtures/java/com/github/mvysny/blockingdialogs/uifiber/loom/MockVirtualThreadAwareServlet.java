@@ -16,7 +16,6 @@ import com.vaadin.flow.server.VaadinServlet;
 import com.vaadin.flow.server.VaadinServletService;
 import com.vaadin.flow.server.WrappedSession;
 import kotlin.jvm.functions.Function0;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.locks.Lock;
 
@@ -27,7 +26,7 @@ import java.util.concurrent.locks.Lock;
  * }</pre>
  */
 public class MockVirtualThreadAwareServlet extends MockVaadinServlet {
-    public MockVirtualThreadAwareServlet(@NotNull Routes routes) {
+    public MockVirtualThreadAwareServlet(Routes routes) {
         super(routes);
     }
 
@@ -44,8 +43,8 @@ public class MockVirtualThreadAwareServlet extends MockVaadinServlet {
     }
 
     private static class Service extends MockService {
-        Service(@NotNull VaadinServlet servlet, @NotNull DeploymentConfiguration deploymentConfiguration,
-                @NotNull Function0<? extends UI> uiFactory) {
+        Service(VaadinServlet servlet, DeploymentConfiguration deploymentConfiguration,
+                Function0<? extends UI> uiFactory) {
             super(servlet, deploymentConfiguration, uiFactory);
         }
 

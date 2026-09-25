@@ -15,8 +15,7 @@ import com.vaadin.flow.server.ErrorEvent;
 import com.vaadin.flow.server.ErrorHandler;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.shared.Registration;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,13 +38,11 @@ import java.util.function.Supplier;
  * and it runs holding the session lock except inside {@link Park#park()}.
  */
 public final class StrategySupport {
-    @NotNull
     private static final Logger log = LoggerFactory.getLogger(StrategySupport.class);
 
     /**
      * Set while a UI fiber runs on this thread; {@code null} otherwise, never {@code false}.
      */
-    @NotNull
     private static final ThreadLocal<Boolean> inUIFiber = new ThreadLocal<>();
 
     private StrategySupport() {
@@ -65,7 +62,6 @@ public final class StrategySupport {
      * @throws IllegalStateException unless the calling thread holds the session lock with
      *                               {@link UI#getCurrent()} set.
      */
-    @NotNull
     public static UI checkLockedUI() {
         final UI ui = UI.getCurrent();
         final VaadinSession session = ui == null ? null : ui.getSession();
@@ -84,7 +80,7 @@ public final class StrategySupport {
      *
      * @param ui the UI {@code runLater()} was called for.
      */
-    public static void runUIFiber(@NotNull UI ui, @NotNull Runnable body) {
+    public static void runUIFiber(UI ui, Runnable body) {
         Objects.requireNonNull(body);
         final Map<Class<?>, CurrentInstance> previous = CurrentInstance.setCurrent(ui);
         // only a test strategy nests UI fibers on one thread; a real one starts each on a fresh thread
@@ -105,7 +101,7 @@ public final class StrategySupport {
         }
     }
 
-    private static void handleError(@NotNull Throwable t) {
+    private static void handleError(Throwable t) {
         final VaadinSession session = VaadinSession.getCurrent();
         final ErrorHandler errorHandler = session == null ? null : session.getErrorHandler();
         if (errorHandler == null) {
@@ -119,7 +115,7 @@ public final class StrategySupport {
      * The whole of {@link BlockingExecutor#accessSynchronously(UI, Supplier)}; a strategy has no reason
      * to override that.
      */
-    static <T> T accessSynchronously(@NotNull BlockingExecutor executor, @NotNull UI ui, @NotNull Supplier<T> body) {
+    static <T extends @Nullable Object> T accessSynchronously(BlockingExecutor executor, UI ui, Supplier<T> body) {
         Objects.requireNonNull(body);
         final VaadinSession session = ui.getSession();
         if (isInUIFiber()) {
@@ -153,7 +149,7 @@ public final class StrategySupport {
      * Waits the strategy's way until the future a UI fiber is parked on is done.
      */
     @FunctionalInterface
-    public interface Park<T> {
+    public interface Park<T extends @Nullable Object> {
         /**
          * Waits until the future is done with the session lock released, and returns its value -
          * as {@link CompletableFuture#get()} does, which is what loom's park is.
@@ -177,7 +173,7 @@ public final class StrategySupport {
      * @throws CancellationException if {@code future} is cancelled, or {@code park} is interrupted.
      * @throws IllegalStateException if there is no current UI.
      */
-    public static <T> T awaitAnchored(@NotNull Component anchor, @NotNull CompletableFuture<T> future, @NotNull Park<T> park) {
+    public static <T extends @Nullable Object> T awaitAnchored(Component anchor, CompletableFuture<T> future, Park<T> park) {
         final UI ui = UI.getCurrent();
         if (ui == null || ui.getSession() == null) {
             throw new IllegalStateException("No UI.getCurrent(): a UI fiber always has one");
@@ -221,17 +217,17 @@ public final class StrategySupport {
         @Nullable
         private final transient CompletableFuture<?> future;
 
-        AnchorWatch(@NotNull VaadinSession session, @NotNull UI ui, @NotNull CompletableFuture<?> future) {
+        AnchorWatch(VaadinSession session, UI ui, CompletableFuture<?> future) {
             this.session = session;
             this.ui = ui;
             this.future = Objects.requireNonNull(future);
         }
 
-        void attached(@NotNull AttachEvent event) {
+        void attached(AttachEvent event) {
             ui = event.getUI();
         }
 
-        void detached(@NotNull DetachEvent event) {
+        void detached(DetachEvent event) {
             if (session == null || future == null) {
                 return; // deserialized: the wait is gone already
             }
@@ -257,7 +253,7 @@ public final class StrategySupport {
     /**
      * {@code park} with the {@link BlockingExecutor#parkAndAwait} exception contract.
      */
-    private static <T> T parkUnwrapped(@NotNull Park<T> park) {
+    private static <T extends @Nullable Object> T parkUnwrapped(Park<T> park) {
         try {
             return park.park();
         } catch (ExecutionException e) {
@@ -274,8 +270,7 @@ public final class StrategySupport {
      * Throws {@code t} as-is, checked or not; declared to return so that callers can {@code throw} it.
      */
     @SuppressWarnings("unchecked")
-    @NotNull
-    private static <E extends Throwable> RuntimeException sneakyThrow(@NotNull Throwable t) throws E {
+    private static <E extends Throwable> RuntimeException sneakyThrow(Throwable t) throws E {
         throw (E) t;
     }
 }

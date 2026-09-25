@@ -12,7 +12,8 @@ slf4j = "2.0.18"
 [libraries]
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
-jetbrains-annotations = "org.jetbrains:annotations:26.1.0"
+# https://repo1.maven.org/maven2/org/jspecify/jspecify/
+jspecify = "org.jspecify:jspecify:1.0.1"
 # Vaadin declares it `provided`, so compileOnly(vaadin-core) doesn't bring it
 jakarta-servlet = "jakarta.servlet:jakarta.servlet-api:6.1.0"
 vaadin-core = { module = "com.vaadin:vaadin-core", version.ref = "vaadin" }

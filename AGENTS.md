@@ -48,7 +48,7 @@ Every fact lives in exactly one of these; the others link to it.
 - **Pure Java, no Kotlin** — production code and tests alike.
 - **Java 21 bytecode; the loom strategy needs JDK 24+ at runtime.** CI builds on 21 to keep the floor honest.
 - **Tests: JUnit Jupiter + Karibu-Testing through the Java `LocatorJ` API**, in-JVM without a browser; no mocking library.
-- **Nullability is annotated** with JetBrains `@NotNull` / `@Nullable` on every public parameter and return value.
+- **Nullability is JSpecify: every package is `@NullMarked`** in its `package-info.java`, so only `@Nullable` is written; a type parameter that admits `null` is `<T extends @Nullable Object>`.
 - **Dependency versions live in `gradle/libs.versions.toml`**, never in a module's `build.gradle.kts`.
 - **A published module calls `configureMavenCentral("<artifactId>")`**; the artifactId is its directory name, the package `com.github.mvysny.blockingdialogs` for `vaadin-blocking-dialogs`, `com.github.mvysny.blockingdialogs.uifiber.<x>` for `vaadin-uifiber-<x>`.
 - **Every source and build file opens with the MIT header, `Copyright 2026 Martin Vysny`** — code ported from vaadin-loom included, its `Vaadin Ltd.` header replaced; copy it from `build.gradle.kts`.

@@ -6,8 +6,7 @@
  */
 package com.github.mvysny.blockingdialogs;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +28,6 @@ final class StrategyLoader {
      * The outcome of a lookup: exactly one of {@code executor} and {@code error} is set.
      */
     record Result(@Nullable BlockingExecutor executor, @Nullable String error, @Nullable Throwable cause) {
-        @NotNull
         BlockingExecutor getOrThrow() {
             if (executor == null) {
                 throw new IllegalStateException(error, cause);
@@ -39,17 +37,14 @@ final class StrategyLoader {
     }
 
     private static final class Holder {
-        @NotNull
         static final Result result = load(BlockingExecutor.class.getClassLoader());
     }
 
-    @NotNull
     static BlockingExecutor get() {
         return Holder.result.getOrThrow();
     }
 
-    @NotNull
-    static Result load(@NotNull ClassLoader classLoader) {
+    static Result load(ClassLoader classLoader) {
         final List<BlockingExecutor> found = new ArrayList<>();
         try {
             ServiceLoader.load(BlockingExecutor.class, classLoader).forEach(found::add);

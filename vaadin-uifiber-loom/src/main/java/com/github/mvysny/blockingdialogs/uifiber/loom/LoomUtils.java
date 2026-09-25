@@ -6,8 +6,6 @@
  */
 package com.github.mvysny.blockingdialogs.uifiber.loom;
 
-import org.jetbrains.annotations.NotNull;
-
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.Objects;
@@ -50,8 +48,7 @@ final class LoomUtils {
     /**
      * A virtual thread builder whose threads run their continuations on {@code scheduler}.
      */
-    @NotNull
-    static Thread.Builder.OfVirtual newVirtualBuilder(@NotNull Executor scheduler) {
+    static Thread.Builder.OfVirtual newVirtualBuilder(Executor scheduler) {
         Objects.requireNonNull(scheduler);
         try {
             return (Thread.Builder.OfVirtual) builderConstructor().newInstance(scheduler);
@@ -77,8 +74,7 @@ final class LoomUtils {
      * run on {@code carrier}, under the session lock, queued behind the thread that started it; so
      * every other continuation goes to a JVM-wide pool of platform carriers instead.
      */
-    @NotNull
-    static Thread newVirtualThread(@NotNull Executor carrier, @NotNull String name, @NotNull Runnable task) {
+    static Thread newVirtualThread(Executor carrier, String name, Runnable task) {
         Objects.requireNonNull(carrier);
         final AtomicReference<Runnable> own = new AtomicReference<>();
         final Thread thread = newVirtualBuilder(continuation ->
@@ -104,8 +100,7 @@ final class LoomUtils {
      * start, and again at each resume after a park - so it identifies the thread from the
      * scheduler's side, which sees nothing else.
      */
-    @NotNull
-    private static Runnable continuationOf(@NotNull Thread virtualThread) {
+    private static Runnable continuationOf(Thread virtualThread) {
         try {
             return (Runnable) runContinuationField().get(virtualThread);
         } catch (IllegalAccessException e) {
@@ -113,7 +108,6 @@ final class LoomUtils {
         }
     }
 
-    @NotNull
     private static Constructor<?> builderConstructor() {
         Constructor<?> c = builderConstructor;
         if (c == null) {
@@ -133,7 +127,6 @@ final class LoomUtils {
     /**
      * The private final {@code java.lang.VirtualThread.runContinuation}, set in the constructor.
      */
-    @NotNull
     private static Field runContinuationField() {
         Field field = runContinuation;
         if (field == null) {

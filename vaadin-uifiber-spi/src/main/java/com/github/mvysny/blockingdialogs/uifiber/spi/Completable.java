@@ -6,8 +6,7 @@
  */
 package com.github.mvysny.blockingdialogs.uifiber.spi;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -36,7 +35,7 @@ public interface Completable<R> {
      *              throws as-is; any other cause when the wait failed, which it wraps in an
      *              {@link ExecutionException}.
      */
-    void fail(@NotNull Throwable cause);
+    void fail(Throwable cause);
 
     /**
      * Parks the calling UI fiber until {@link #complete} or {@link #fail}. Called at most once, by the

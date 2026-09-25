@@ -7,7 +7,6 @@
 package com.github.mvysny.blockingdialogs.uifiber.spi;
 
 import com.vaadin.flow.server.VaadinSession;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * The SPI a runner implements: it runs <i>UI fibers</i>, code of a Vaadin session that parks until
@@ -52,13 +51,12 @@ public interface UIFiberRunnerSpi {
      *                anchor to a new UI on a refresh.
      * @param body    the fiber's code; throws nothing.
      */
-    void runUntilFirstPark(@NotNull VaadinSession session, @NotNull Runnable body);
+    void runUntilFirstPark(VaadinSession session, Runnable body);
 
     /**
      * A new one-shot wake-up for a UI fiber of {@code session} to park on. Called by that fiber.
      *
      * @param <R> the type of the value the fiber is woken with.
      */
-    @NotNull
-    <R> Completable<R> newCompletable(@NotNull VaadinSession session);
+    <R> Completable<R> newCompletable(VaadinSession session);
 }

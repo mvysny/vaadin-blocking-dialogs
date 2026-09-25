@@ -11,8 +11,7 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.internal.CurrentInstance;
 import com.vaadin.flow.server.VaadinSession;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -40,7 +39,6 @@ public final class ScriptedBlockingExecutor implements BlockingExecutor {
     /**
      * What the user does at each park, in order - usually a click on a dialog button.
      */
-    @NotNull
     public static final Deque<Runnable> user = new ArrayDeque<>();
 
     /**
@@ -81,7 +79,7 @@ public final class ScriptedBlockingExecutor implements BlockingExecutor {
     }
 
     @Override
-    public void runLater(@NotNull Runnable body) {
+    public void runLater(Runnable body) {
         final UI ui = StrategySupport.checkLockedUI();
         ui.access(() -> StrategySupport.runUIFiber(ui, body));
     }
@@ -91,12 +89,12 @@ public final class ScriptedBlockingExecutor implements BlockingExecutor {
      * UI fiber runs before this returns, its scripted user actions included.
      */
     @Override
-    public void runUntilPark(@NotNull Runnable body) {
+    public void runUntilPark(Runnable body) {
         StrategySupport.runUIFiber(StrategySupport.checkLockedUI(), body);
     }
 
     @Override
-    public <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
+    public <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
         checkInUIFiber();
         return StrategySupport.awaitAnchored(anchor, future, () -> {
             // Karibu's roundtrip needs the one hold the test thread started with; the rest are the

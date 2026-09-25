@@ -11,7 +11,7 @@ import com.github.mvysny.blockingdialogs.StrategySupport;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinSession;
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -46,7 +46,6 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
      * The system property that lets the strategy start on Java 21-23, where a UI fiber parking inside
      * {@code synchronized} deadlocks its session - for apps stuck on 21 LTS that accept the risk.
      */
-    @NotNull
     public static final String ALLOW_PINNING_JDK = "blockingdialogs.uifiber.loom.allowPinningJdk";
 
     /**
@@ -73,7 +72,7 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
     }
 
     @Override
-    public void runLater(@NotNull Runnable body) {
+    public void runLater(Runnable body) {
         Objects.requireNonNull(body);
         start(StrategySupport.checkLockedUI(), body, false);
     }
@@ -89,7 +88,7 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
      *                               which can't carry the UI fiber.
      */
     @Override
-    public void runUntilPark(@NotNull Runnable body) {
+    public void runUntilPark(Runnable body) {
         Objects.requireNonNull(body);
         final UI ui = StrategySupport.checkLockedUI();
         if (StrategySupport.isInUIFiber()) {
@@ -108,7 +107,7 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
      * @param mountHere whether the UI fiber's first segment runs on the calling thread before this
      *                  returns, rather than queued as an access task.
      */
-    private static void start(@NotNull UI ui, @NotNull Runnable body, boolean mountHere) {
+    private static void start(UI ui, Runnable body, boolean mountHere) {
         final VaadinSession session = ui.getSession();
         final VirtualThreadAwareLock lock = VirtualThreadAwareLock.asVirtualThreadAware(session.getLockInstance());
         LoomUtils.newVirtualThread(new SessionCarrier(session, mountHere), "blocking-dialogs-ui-" + ui.getUIId(), () -> {
@@ -122,7 +121,7 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
     }
 
     @Override
-    public <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
+    public <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
         Objects.requireNonNull(future);
         checkInUIFiber();
         return StrategySupport.awaitAnchored(anchor, future, future::get);
@@ -143,10 +142,8 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
         /**
          * How deep {@link #execute} has re-entered itself on the current thread.
          */
-        @NotNull
         private static final ThreadLocal<int[]> nestedSubmits = ThreadLocal.withInitial(() -> new int[1]);
 
-        @NotNull
         private final VaadinSession session;
 
         /**
@@ -156,7 +153,7 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
          */
         private volatile boolean mountHere;
 
-        SessionCarrier(@NotNull VaadinSession session, boolean mountHere) {
+        SessionCarrier(VaadinSession session, boolean mountHere) {
             this.session = session;
             this.mountHere = mountHere;
         }
@@ -175,7 +172,7 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
          *                                    runaway either.
          */
         @Override
-        public void execute(@NotNull Runnable continuation) {
+        public void execute(Runnable continuation) {
             if (mountHere) {
                 mountHere = false;
                 mount(continuation);
@@ -203,7 +200,7 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
          * {@code ui.access()}, a virtual request thread - hands it to a platform thread, which takes
          * the lock once the drainer lets go.
          */
-        private void mount(@NotNull Runnable continuation) {
+        private void mount(Runnable continuation) {
             if (Thread.currentThread().isVirtual()) {
                 Handoff.POOL.execute(() -> session.accessSynchronously(continuation::run));
             } else {

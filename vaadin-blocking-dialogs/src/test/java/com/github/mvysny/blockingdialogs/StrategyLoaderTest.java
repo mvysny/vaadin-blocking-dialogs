@@ -7,7 +7,7 @@
 package com.github.mvysny.blockingdialogs;
 
 import com.vaadin.flow.component.Component;
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -76,8 +76,7 @@ public class StrategyLoaderTest {
     /**
      * @return a classloader whose only {@code BlockingExecutor} services file lists {@code providers}.
      */
-    @NotNull
-    private ClassLoader withProviders(@NotNull String... providers) throws IOException {
+    private ClassLoader withProviders(String... providers) throws IOException {
         final Path services = Files.write(dir.resolve("services"), List.of(providers));
         final URL url = services.toUri().toURL();
         return new ClassLoader(StrategyLoaderTest.class.getClassLoader()) {
@@ -93,17 +92,17 @@ public class StrategyLoaderTest {
      */
     public static final class OtherStrategy implements BlockingExecutor {
         @Override
-        public void runLater(@NotNull Runnable body) {
+        public void runLater(Runnable body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public void runUntilPark(@NotNull Runnable body) {
+        public void runUntilPark(Runnable body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
+        public <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
             throw new UnsupportedOperationException();
         }
     }
@@ -117,17 +116,17 @@ public class StrategyLoaderTest {
         }
 
         @Override
-        public void runLater(@NotNull Runnable body) {
+        public void runLater(Runnable body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public void runUntilPark(@NotNull Runnable body) {
+        public void runUntilPark(Runnable body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
+        public <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
             throw new UnsupportedOperationException();
         }
     }

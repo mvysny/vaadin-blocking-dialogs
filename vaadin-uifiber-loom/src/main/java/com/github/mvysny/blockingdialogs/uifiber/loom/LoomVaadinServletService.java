@@ -10,7 +10,6 @@ import com.vaadin.flow.function.DeploymentConfiguration;
 import com.vaadin.flow.server.VaadinServlet;
 import com.vaadin.flow.server.VaadinServletService;
 import com.vaadin.flow.server.WrappedSession;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.locks.Lock;
 
@@ -20,7 +19,7 @@ import java.util.concurrent.locks.Lock;
  * {@code createServletService()}.
  */
 public class LoomVaadinServletService extends VaadinServletService {
-    public LoomVaadinServletService(@NotNull VaadinServlet servlet, @NotNull DeploymentConfiguration deploymentConfiguration) {
+    public LoomVaadinServletService(VaadinServlet servlet, DeploymentConfiguration deploymentConfiguration) {
         super(servlet, deploymentConfiguration);
     }
 

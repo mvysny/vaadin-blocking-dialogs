@@ -9,8 +9,7 @@ package com.github.mvysny.blockingdialogs.uifiber.loom;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.WrappedSession;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +46,6 @@ import java.util.concurrent.locks.ReentrantLock;
  * period it grants a UI while somebody waits for the session lock.
  */
 public final class VirtualThreadAwareLock extends ReentrantLock {
-    @NotNull
     private final ReentrantLock delegate;
 
     /**
@@ -55,10 +53,9 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      * Static so that it survives session serialization - the lock itself is stored as a session
      * attribute.
      */
-    @NotNull
     private static final ThreadLocal<PretendHold> pretendHold = new ThreadLocal<>();
 
-    private VirtualThreadAwareLock(@NotNull ReentrantLock delegate) {
+    private VirtualThreadAwareLock(ReentrantLock delegate) {
         this.delegate = Objects.requireNonNull(delegate);
     }
 
@@ -71,7 +68,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      * @return the wrapper, or {@code null} if {@code lock} was {@code null}
      */
     @Nullable
-    public static Lock wrap(@NotNull VaadinService service, @NotNull WrappedSession wrappedSession,
+    public static Lock wrap(VaadinService service, WrappedSession wrappedSession,
                             @Nullable Lock lock) {
         if (lock == null || lock instanceof VirtualThreadAwareLock) {
             return lock;
@@ -99,7 +96,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      * @param sessionLock {@link VaadinSession#getLockInstance()}
      * @throws IllegalStateException if the session lock isn't a {@link VirtualThreadAwareLock}
      */
-    static void enterUIVirtualThread(@NotNull Lock sessionLock) {
+    static void enterUIVirtualThread(Lock sessionLock) {
         pretendHold.set(new PretendHold(asVirtualThreadAware(sessionLock)));
     }
 
@@ -118,8 +115,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      * @throws IllegalStateException if {@code sessionLock} isn't a {@link VirtualThreadAwareLock},
      *                               naming the fix.
      */
-    @NotNull
-    static VirtualThreadAwareLock asVirtualThreadAware(@NotNull Lock sessionLock) {
+    static VirtualThreadAwareLock asVirtualThreadAware(Lock sessionLock) {
         if (!(sessionLock instanceof VirtualThreadAwareLock)) {
             throw new IllegalStateException("Expected " + VirtualThreadAwareLock.class.getSimpleName()
                     + " but got " + sessionLock.getClass().getName() + ": serve the app from a subclass of "
@@ -137,7 +133,6 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
         return hold != null && hold.lock == this;
     }
 
-    @NotNull
     private PretendHold hold() {
         return Objects.requireNonNull(pretendHold.get());
     }
@@ -174,7 +169,7 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
     }
 
     @Override
-    public boolean tryLock(long timeout, @NotNull TimeUnit unit) throws InterruptedException {
+    public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
         if (isPretending()) {
             hold().depth++;
             return true;
@@ -207,7 +202,6 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      *                                       {@link IllegalMonitorStateException}
      */
     @Override
-    @NotNull
     public Condition newCondition() {
         if (isPretending()) {
             throw new UnsupportedOperationException("Conditions on the Vaadin session lock are not available on a UI virtual thread");
@@ -242,17 +236,16 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
     }
 
     @Override
-    public boolean hasWaiters(@NotNull Condition condition) {
+    public boolean hasWaiters(Condition condition) {
         return delegate.hasWaiters(condition);
     }
 
     @Override
-    public int getWaitQueueLength(@NotNull Condition condition) {
+    public int getWaitQueueLength(Condition condition) {
         return delegate.getWaitQueueLength(condition);
     }
 
     @Override
-    @NotNull
     public String toString() {
         return getClass().getSimpleName() + "(" + delegate + (isPretending() ? ", pretend depth " + hold().depth : "") + ")";
     }
@@ -262,11 +255,10 @@ public final class VirtualThreadAwareLock extends ReentrantLock {
      * already has.
      */
     private static final class PretendHold {
-        @NotNull
         private final VirtualThreadAwareLock lock;
         private int depth;
 
-        private PretendHold(@NotNull VirtualThreadAwareLock lock) {
+        private PretendHold(VirtualThreadAwareLock lock) {
             this.lock = lock;
         }
     }

@@ -13,7 +13,6 @@ import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.Route;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * Two nested confirms, written as straight-line code.
@@ -33,7 +32,7 @@ public class MainView extends VerticalLayout {
     /**
      * @return whether the user pressed Confirm; Cancel and Escape say no.
      */
-    private static boolean confirm(@NotNull String text) {
+    private static boolean confirm(String text) {
         final ConfirmDialog dialog = new ConfirmDialog();
         dialog.setText(text);
         dialog.setCancelable(true);

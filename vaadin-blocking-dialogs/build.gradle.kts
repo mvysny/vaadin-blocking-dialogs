@@ -9,8 +9,8 @@ plugins {
 }
 
 dependencies {
-    // Java has no nullable types
-    api(libs.jetbrains.annotations)
+    // Java has no nullable types; every package is @NullMarked
+    api(libs.jspecify)
     implementation(libs.slf4j.api)
 
     // the app brings its own Vaadin

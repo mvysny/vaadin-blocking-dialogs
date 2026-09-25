@@ -7,13 +7,12 @@
 package com.example.blockingdialogs;
 
 import com.github.mvysny.vaadinboot.VaadinBoot;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * Run {@link #main(String[])} to launch the demo in embedded Jetty.
  */
 public final class Main {
-    public static void main(@NotNull String[] args) throws Exception {
+    public static void main(String[] args) throws Exception {
         new VaadinBoot()
                 .useVirtualThreadsIfAvailable(false)  // the loom strategy needs platform request threads
                 .run();

@@ -13,8 +13,7 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.shared.Registration;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
@@ -52,35 +51,35 @@ public final class BlockingDialogs {
     /**
      * {@link BlockingExecutor#runLater}.
      */
-    public static void runLater(@NotNull Runnable body) {
+    public static void runLater(Runnable body) {
         BlockingExecutor.get().runLater(body);
     }
 
     /**
      * {@link BlockingExecutor#runUntilPark}.
      */
-    public static void runUntilPark(@NotNull Runnable body) {
+    public static void runUntilPark(Runnable body) {
         BlockingExecutor.get().runUntilPark(body);
     }
 
     /**
      * {@link BlockingExecutor#access}, for background threads.
      */
-    public static void access(@NotNull UI ui, @NotNull Runnable body) {
+    public static void access(UI ui, Runnable body) {
         BlockingExecutor.get().access(ui, body);
     }
 
     /**
      * {@link BlockingExecutor#accessSynchronously(UI, Runnable)}.
      */
-    public static void accessSynchronously(@NotNull UI ui, @NotNull Runnable body) {
+    public static void accessSynchronously(UI ui, Runnable body) {
         BlockingExecutor.get().accessSynchronously(ui, body);
     }
 
     /**
      * {@link BlockingExecutor#accessSynchronously(UI, Supplier)}.
      */
-    public static <T> T accessSynchronously(@NotNull UI ui, @NotNull Supplier<T> body) {
+    public static <T extends @Nullable Object> T accessSynchronously(UI ui, Supplier<T> body) {
         return BlockingExecutor.get().accessSynchronously(ui, body);
     }
 
@@ -89,7 +88,7 @@ public final class BlockingDialogs {
      *
      * @throws IllegalStateException outside a UI fiber.
      */
-    public static <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future) {
+    public static <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
         return BlockingExecutor.get().parkAndAwait(anchor, future);
     }
 
@@ -122,7 +121,7 @@ public final class BlockingDialogs {
      * @throws IllegalStateException outside a UI fiber.
      * @throws CancellationException if the dialog detached without an answer.
      */
-    public static <T> T showAndAwait(@NotNull Dialog dialog, @NotNull CompletableFuture<T> answer) {
+    public static <T extends @Nullable Object> T showAndAwait(Dialog dialog, CompletableFuture<T> answer) {
         Objects.requireNonNull(answer);
         final BlockingExecutor executor = BlockingExecutor.get();
         executor.checkInUIFiber();
@@ -153,8 +152,7 @@ public final class BlockingDialogs {
      * @throws IllegalStateException outside a UI fiber.
      * @throws CancellationException if the dialog detached without an answer.
      */
-    @NotNull
-    public static ConfirmDialogOutcome showAndAwait(@NotNull ConfirmDialog dialog) {
+    public static ConfirmDialogOutcome showAndAwait(ConfirmDialog dialog) {
         final BlockingExecutor executor = BlockingExecutor.get();
         executor.checkInUIFiber();
         final CompletableFuture<ConfirmDialogOutcome> answer = new CompletableFuture<>();
@@ -182,16 +180,15 @@ public final class BlockingDialogs {
     private static final class Answer<E extends ComponentEvent<?>> implements ComponentEventListener<E> {
         @Nullable
         private final transient CompletableFuture<ConfirmDialogOutcome> answer;
-        @NotNull
         private final ConfirmDialogOutcome outcome;
 
-        Answer(@NotNull CompletableFuture<ConfirmDialogOutcome> answer, @NotNull ConfirmDialogOutcome outcome) {
+        Answer(CompletableFuture<ConfirmDialogOutcome> answer, ConfirmDialogOutcome outcome) {
             this.answer = answer;
             this.outcome = outcome;
         }
 
         @Override
-        public void onComponentEvent(@NotNull E event) {
+        public void onComponentEvent(E event) {
             if (answer != null) {
                 answer.complete(outcome);
             }

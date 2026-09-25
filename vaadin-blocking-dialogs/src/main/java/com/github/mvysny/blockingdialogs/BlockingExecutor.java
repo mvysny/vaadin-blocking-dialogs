@@ -8,7 +8,7 @@ package com.github.mvysny.blockingdialogs;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
@@ -38,7 +38,7 @@ import java.util.function.Supplier;
  *         startUIFiberThreadAndAwaitItsPark(() -> StrategySupport.runUIFiber(ui, body));
  *     }
  * }
- * public <T> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
+ * public <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future) {
  *     checkInUIFiber();
  *     return StrategySupport.awaitAnchored(anchor, future, future::get);  // loom: get() unmounts
  * }
@@ -58,7 +58,6 @@ public interface BlockingExecutor {
      *
      * @throws IllegalStateException if there is none, or more than one - on every call alike.
      */
-    @NotNull
     static BlockingExecutor get() {
         return StrategyLoader.get();
     }
@@ -80,7 +79,7 @@ public interface BlockingExecutor {
      *                               {@link UI#getCurrent()} set - a listener, or code inside
      *                               {@link UI#access}. Background threads call {@link #access}.
      */
-    void runLater(@NotNull Runnable body);
+    void runLater(Runnable body);
 
     /**
      * Runs {@code body} as a new UI fiber, and returns once it parks or ends: the caller's next line
@@ -92,14 +91,14 @@ public interface BlockingExecutor {
      * {@link com.vaadin.flow.server.ErrorHandler}, never to the caller, inline too.
      * @throws IllegalStateException as {@link #runLater} does.
      */
-    void runUntilPark(@NotNull Runnable body);
+    void runUntilPark(Runnable body);
 
     /**
      * {@link #runLater} for a background thread: {@code ui.access(() -> runLater(body))}.
      *
      * @throws com.vaadin.flow.component.UIDetachedException if {@code ui} is detached.
      */
-    default void access(@NotNull UI ui, @NotNull Runnable body) {
+    default void access(UI ui, Runnable body) {
         Objects.requireNonNull(body);
         ui.access(() -> runLater(body));
     }
@@ -118,7 +117,7 @@ public interface BlockingExecutor {
      * @throws IllegalStateException from any other thread holding the session lock, which would
      *                               deadlock; or inside a UI fiber, for a {@code ui} of another session.
      */
-    default <T> T accessSynchronously(@NotNull UI ui, @NotNull Supplier<T> body) {
+    default <T extends @Nullable Object> T accessSynchronously(UI ui, Supplier<T> body) {
         return StrategySupport.accessSynchronously(this, ui, body);
     }
 
@@ -126,7 +125,7 @@ public interface BlockingExecutor {
      * Runs body in a UI fiber.
      * {@link #accessSynchronously(UI, Supplier)} for a UI fiber returning nothing.
      */
-    default void accessSynchronously(@NotNull UI ui, @NotNull Runnable body) {
+    default void accessSynchronously(UI ui, Runnable body) {
         Objects.requireNonNull(body);
         accessSynchronously(ui, () -> {
             body.run();
@@ -148,7 +147,7 @@ public interface BlockingExecutor {
      *                               ends quietly.
      * @throws IllegalStateException unless called inside a UI fiber.
      */
-    <T> T parkAndAwait(@NotNull Component anchor, @NotNull CompletableFuture<T> future);
+    <T extends @Nullable Object> T parkAndAwait(Component anchor, CompletableFuture<T> future);
 
     /**
      * Throws unless the calling thread may park: it runs a UI fiber.
