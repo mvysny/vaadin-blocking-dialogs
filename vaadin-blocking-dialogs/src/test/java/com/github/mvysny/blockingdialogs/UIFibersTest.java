@@ -195,6 +195,20 @@ public class UIFibersTest {
             assertEquals(List.of("UI fiber", "caller"), log);
         }
 
+        /**
+         * The exception to "no roundtrip": a UI fiber that the call wakes resumes in the session's
+         * drain, see {@code D_wake_is_access_task}.
+         */
+        @Test
+        public void aUIFiberItWakesResumesInTheNextDrain() {
+            final CompletableFuture<String> answer = new CompletableFuture<>();
+            UIFibers.runUntilPark(() -> log.add("A: " + UIFibers.parkAndAwait(UI.getCurrent(), answer)));
+            UIFibers.runUntilPark(() -> answer.complete("yes"));   // the dialog's OK click
+            assertEquals(List.of(), log);
+            MockVaadin.clientRoundtrip();
+            assertEquals(List.of("A: yes"), log);
+        }
+
         @Test
         public void insideAUIFiberRunsInlineParksIncluded() {
             final CompletableFuture<String> answer = new CompletableFuture<>();

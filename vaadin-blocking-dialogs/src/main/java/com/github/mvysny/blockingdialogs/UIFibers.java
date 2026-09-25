@@ -99,7 +99,8 @@ public final class UIFibers {
      * session runs before this returns.
      *
      * @apiNote The exceptions go to the {@link ErrorHandler} as for {@link #runLater}, never to the
-     * caller, inline too.
+     * caller, inline too. A UI fiber that {@code body} wakes - a dialog's OK click - resumes in the
+     * session's next drain of access tasks, not before this returns, as it would from any listener.
      * @throws IllegalStateException as {@link #runLater} does.
      */
     public static void runUntilPark(Runnable body) {

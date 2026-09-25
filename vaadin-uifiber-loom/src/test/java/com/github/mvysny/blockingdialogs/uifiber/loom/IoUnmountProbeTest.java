@@ -216,4 +216,22 @@ public class IoUnmountProbeTest {
             assertEquals(2, uiFibersStarted.get(), "the second click ran the blocking listener again");
         }
     }
+
+    /**
+     * The consequence for {@code D_run_until_park}: {@code Thread.start()} returns at any unmount, so
+     * {@code runUntilPark} returns at a socket read, before the UI fiber's first park.
+     */
+    @Test
+    public void runUntilParkReturnsAtASocketReadBeforeTheFirstPark() throws Exception {
+        try (Wire wire = new Wire()) {
+            UIFibers.runUntilPark(() -> {
+                wire.read();
+                log.add("after IO, dialog opened");
+            });
+            System.out.println("PROBE runUntilPark returned with log=" + log);
+            assertEquals(List.of(), log, "runUntilPark returned mid-read");
+            wire.answer();
+            awaitLog(1);
+        }
+    }
 }

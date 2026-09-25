@@ -16,7 +16,7 @@ things:
   EDT is the norm, where the EDT never interleaves listeners.
 
 It also fixes `runUntilPark` returning at the first IO rather than the first park
-(`RunUntilParkProbeTest.ioBeforeTheFirstDialog`): `Thread.start()` returns at any unmount.
+(`IoUnmountProbeTest.runUntilParkReturnsAtASocketReadBeforeTheFirstPark`): `Thread.start()` returns at any unmount.
 
 It also subsumes most of `session-destroy-ends-bare-parks.md`. A bare `future.get()` would then
 hold the lock, freezing the UI at once — loud, as it already is under session-unlock — instead of
