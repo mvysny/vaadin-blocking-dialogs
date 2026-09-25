@@ -5,7 +5,7 @@ way Swing's `JOptionPane` does, instead of splitting the logic into callbacks. T
 until the user answers while the browser keeps receiving UI updates. How it is suspended is a
 pluggable runner: virtual threads, or a platform thread parked with the session lock released.
 
-> **Work in progress.** Nothing is published to Maven Central yet, and the API is not settled.
+> **Pre-1.0.** The API is not settled yet and may break between releases.
 
 Read [Vaadin and Blocking Dialogs](https://mvysny.github.io/vaadin-blocking-dialogs/) on why this is
 such a hard thing to do in a web framework.
