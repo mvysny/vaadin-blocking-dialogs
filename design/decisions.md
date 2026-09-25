@@ -164,7 +164,7 @@ asserting straight after `_click` still needs a roundtrip.
 
 The answer decides whether a call may park, runs inline or would deadlock, and the API gets it
 exact by construction: a thread-local its wrapper sets around `body` and clears around each park —
-a parked fiber isn't running, and the scripted test runner plays the next click on its thread. The
+a parked fiber isn't running, and the SPI lets a runner run another fiber on its thread meanwhile. The
 runner keeps a flag of its own, since `runUntilFirstPark` must refuse a call from inside a fiber,
 but the API doesn't ask it. Asking would leave one source of truth: a runner bug would send the API
 down the wrong branch and silence the runner's own check with it — odd behaviour, no exception.

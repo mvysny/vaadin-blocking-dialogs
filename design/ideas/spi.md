@@ -29,8 +29,6 @@ once, a modal closed from a background thread, a parked modal following F5, fibe
 `ErrorHandler`. Everything else is deferred:
 
 - the background-thread runner — `blocking-strategy-session-unlock.md`, its "On the SPI";
-- porting the scripted test runner, `ScriptedBlockingExecutor`, or testing the API on loom instead
-  — `scripted-test-runner.md`;
 - the epilogue before every UIDL — `epilogue-before-every-uidl.md`;
 - a `Condition` a fiber can wait on — `ui-fiber-condition.md`.
 
@@ -64,6 +62,14 @@ port loom onto the SPI and rebuild the API on it.
 - The wrapper guarantees `body` throws nothing: a throwing `ErrorHandler` is caught and logged, not
   left to the runner (under loom, the virtual thread's uncaught-exception handler, stderr).
 - The inline branch wraps differently: `inline-ui-fiber-keeps-the-rebound-ui.md`.
+- The API's own tests run on loom, a test dependency once loom depends on the SPI only;
+  `ScriptedBlockingExecutor` retires with `BlockingExecutor` (was `Q_scripted_worth`, settled with
+  Martin). Why not port it to the SPI: a scripted suite never exercises the real runner, parks
+  included — the classic hazard — and SB-Emulators already tests on loom under Karibu, a modal
+  driven by a click from a second listener. What it gave, no threads and so no race between a
+  click and an assertion, matters only to the background-thread runner, deferred with it
+  (`Q_karibu_determinism`). The API still clears its in-fiber flag around `park()`: the SPI lets a
+  runner run another fiber on the thread meanwhile.
 - `Q_eager_check`, settled with Martin — the SPI stays minimal. The API checks what is
   runner-neutral eagerly on the caller's thread, as today: `checkLockedUI` (the lock, a current UI)
   and the in-fiber branch. A runner's setup error thrown by `runUntilFirstPark` inside `runLater`'s

@@ -8,8 +8,8 @@ rebind. `StrategySupport.accessSynchronously`'s inline branch has the same shape
 
 So "wrap the body" is two shapes, not one:
 
-- **At a fiber's root** — restore on the way out is right: the caller's thread (the scripted runner
-  runs the fiber on it) gets its own instances back.
+- **At a fiber's root** — restore on the way out is right: the fiber's thread may be the caller's own
+  or a runner's pooled one (the SPI's "The thread"), and gets its own instances back.
 - **Inline** — the outer fiber must keep whatever UI a park inside rebound to. Skip the restore when
   a park rebound the UI, or restore to the rebound one.
 
