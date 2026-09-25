@@ -86,10 +86,8 @@ public class ProgressDialog extends Dialog {
                 outcome.completeExceptionally(t);
             }
         });
-        dialog.addCancelListener(e -> {
-            task.cancel(true);
-            outcome.complete(null);
-        });
+        // the answer first: the interrupted job would otherwise fail the outcome before Cancel completes it
+        dialog.addCancelListener(e -> outcome.complete(null));
         outcome.whenComplete((result, failure) -> task.cancel(true));
         return BlockingDialogs.showAndAwait(dialog, outcome);
     }
