@@ -271,8 +271,11 @@ public class LoomBlockingExecutorTest {
             assertEquals(List.of("A goes on"), log);
         }
 
+        /**
+         * A virtual caller can't carry the UI fiber, so a platform thread does while the caller waits.
+         */
         @Test
-        public void refusesAVirtualThreadOutsideAUIFiber() throws InterruptedException {
+        public void runsOnAVirtualThreadOutsideAUIFiber() throws InterruptedException {
             final UI ui = UI.getCurrent();
             final VaadinSession session = VaadinSession.getCurrent();
             final AtomicReference<Throwable> thrown = new AtomicReference<>();
@@ -281,6 +284,7 @@ public class LoomBlockingExecutorTest {
                 Thread.ofVirtual().start(() -> ui.accessSynchronously(() -> {
                     try {
                         BlockingDialogs.runUntilPark(() -> log.add("UI fiber"));
+                        log.add("returned");
                     } catch (Throwable t) {
                         thrown.set(t);
                     }
@@ -288,8 +292,8 @@ public class LoomBlockingExecutorTest {
             } finally {
                 session.lock();
             }
-            assertInstanceOf(IllegalStateException.class, thrown.get());
-            assertEquals(List.of(), log);
+            assertNull(thrown.get());
+            assertEquals(List.of("UI fiber", "returned"), log);
         }
     }
 

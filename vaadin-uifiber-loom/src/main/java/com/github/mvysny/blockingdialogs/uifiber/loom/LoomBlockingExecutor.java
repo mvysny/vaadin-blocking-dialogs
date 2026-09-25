@@ -15,9 +15,11 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
@@ -34,9 +36,9 @@ import java.util.concurrent.RejectedExecutionException;
  *     <li>run on Java 24+ ({@link #ALLOW_PINNING_JDK} overrides that, checked at startup), with
  *     {@code --add-opens java.base/java.lang=ALL-UNNAMED};</li>
  *     <li>serve HTTP requests from platform threads - with Vaadin Boot,
- *     {@code useVirtualThreadsIfAvailable(false)}. On a virtual request thread the UI fiber's first
- *     segment is handed to a platform thread after the request, which loses {@code runLater}'s
- *     input exclusion.</li>
+ *     {@code useVirtualThreadsIfAvailable(false)}, until virtual ones are checked in a real
+ *     container: there a platform thread carries each segment of a UI fiber while the request
+ *     thread waits.</li>
  * </ul>
  * <p>
  * Thread-safe, and stateless app-wide.
@@ -80,12 +82,9 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
     /**
      * {@inheritDoc}
      * <p>
-     * The UI fiber's first segment runs on the calling thread, from inside {@link Thread#start()},
-     * rather than as an access task: access tasks queued earlier still wait for the lock's release.
-     *
-     * @throws IllegalStateException also on a virtual thread outside a UI fiber - a virtual request
-     *                               thread, a background virtual thread inside {@code ui.access()} -
-     *                               which can't carry the UI fiber.
+     * The UI fiber's first segment runs from inside {@link Thread#start()}, on the calling thread -
+     * on a platform thread while a virtual caller waits - rather than as an access task: access tasks
+     * queued earlier still wait for the lock's release.
      */
     @Override
     public void runUntilPark(Runnable body) {
@@ -94,11 +93,6 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
         if (StrategySupport.isInUIFiber()) {
             StrategySupport.runUIFiber(ui, body);
             return;
-        }
-        if (Thread.currentThread().isVirtual()) {
-            throw new IllegalStateException("runUntilPark() can't run a UI fiber on " + Thread.currentThread()
-                    + ": a continuation can't mount on a virtual thread. Serve HTTP requests from platform threads;"
-                    + " from a background virtual thread, call runLater() inside ui.access()");
         }
         start(ui, body, true);
     }
@@ -195,23 +189,51 @@ public final class LoomBlockingExecutor implements BlockingExecutor {
 
         /**
          * Runs {@code continuation} on the thread draining the access queue - whichever thread
-         * releases the session lock last - or on {@code runUntilPark()}'s caller. A continuation
-         * can't mount on a virtual thread ({@code WrongThreadException}), so a virtual drainer - a background virtual thread calling
-         * {@code ui.access()}, a virtual request thread - hands it to a platform thread, which takes
-         * the lock once the drainer lets go.
+         * releases the session lock last - or on {@code runUntilPark()}'s caller, until the UI fiber
+         * parks or ends. A continuation can't mount on a virtual thread ({@code WrongThreadException}),
+         * so on a virtual drainer - a background virtual thread calling {@code ui.access()}, a virtual
+         * request thread - a platform thread carries it while the drainer waits, holding the session
+         * lock: the UI fiber still runs before the lock is really released, as on a platform drainer.
+         *
+         * @implNote Not a handoff that takes the lock once the drainer lets go: the drainer's push
+         * and a queued request would then get in before the UI fiber's segment.
          */
         private void mount(Runnable continuation) {
             if (Thread.currentThread().isVirtual()) {
-                Handoff.POOL.execute(() -> session.accessSynchronously(continuation::run));
+                awaitUninterruptibly(Handoff.POOL.submit(continuation));
             } else {
                 continuation.run();
+            }
+        }
+
+        /**
+         * Waits for {@code segment} even when interrupted: the UI fiber runs on the drainer's lock,
+         * which the drainer mustn't let go meanwhile. The interrupt flag is restored afterwards.
+         */
+        private static void awaitUninterruptibly(Future<?> segment) {
+            boolean interrupted = false;
+            try {
+                while (true) {
+                    try {
+                        segment.get();
+                        return;
+                    } catch (InterruptedException e) {
+                        interrupted = true;
+                    } catch (ExecutionException e) {
+                        throw new IllegalStateException("A UI fiber's continuation failed on its carrier", e.getCause());
+                    }
+                }
+            } finally {
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
     }
 
     /**
-     * The platform threads that mount a continuation a virtual drainer couldn't. Cached: each one
-     * waits for the session lock, and a bounded pool would queue sessions behind each other.
+     * The platform threads that carry a continuation for a virtual drainer, one segment each. Cached:
+     * a bounded pool would queue sessions behind each other.
      */
     private static final class Handoff {
         static final ExecutorService POOL = Executors.newCachedThreadPool(

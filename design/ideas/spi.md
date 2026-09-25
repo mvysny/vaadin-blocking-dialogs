@@ -29,15 +29,18 @@ once, a modal closed from a background thread, a parked modal following F5, fibe
 `ErrorHandler`. Everything else is deferred:
 
 - the background-thread runner — `blocking-strategy-session-unlock.md`, its "On the SPI";
-- a scripted test runner — `scripted-test-runner.md`;
+- porting the scripted test runner, `ScriptedBlockingExecutor`, or testing the API on loom instead
+  — `scripted-test-runner.md`;
 - the epilogue before every UIDL — `epilogue-before-every-uidl.md`;
 - a `Condition` a fiber can wait on — `ui-fiber-condition.md`.
 
-**Next:** `Q_run_later_derived`, `Q_api_class_name`, and the prose rename "strategy" → "runner".
-Then port loom onto the SPI and rebuild the API on it.
+**Next:** the prose rename "strategy" → "runner". Then
+port loom onto the SPI and rebuild the API on it.
 
 ## Settled, to build with the API
 
+- The primitives class is `UIFibers`, all statics over the SPI lookup — `UIFibers.runLater(() ->
+  …)`, no `BlockingExecutor.get().` prefix (was `Q_api_class_name`, settled with Martin).
 - `complete()` / `fail()` called lock-less get routed through `session.access` — `session`, not
   `ui`, since the fiber may have followed its anchor to a new UI. Swing tolerates closing a blocking
   dialog from a background thread (a worker disposing its progress modal), so under SB-Emulators it
@@ -131,17 +134,30 @@ thread (today's `mountHere`). `runUntilPark` inside a fiber is inline, and needs
 
 ## Open questions
 
-- **`Q_run_later_derived`** — loom on a *virtual* drainer can't mount, so `runUntilFirstPark` throws
-  there ("a thread the runner can't carry"), and `runLater == access(runUntilPark)` would strand a
-  fiber that today's loom hands to a platform thread. The same goes for a woken fiber's access task
-  drained there. Reachable in SB-Emulators though untested, read from its code and JDK 25's
-  sources, not run: its request threads are platform, but a foreign virtual thread waking a parked
-  fiber while the lock is free drains the queue itself, and on Linux JDK 25's pollers are virtual
+- **`Q_run_later_derived`** — settled with Martin, probed and built into today's loom: a
+  continuation reaching a *virtual* drainer runs on a platform handoff thread while the drainer
+  waits, holding the session lock (`LoomBlockingExecutor.SessionCarrier.mount`). So the segment
+  runs before the drainer's push and before any queued request, as on a platform drainer;
+  `runUntilPark` no longer refuses a virtual caller; `runLater == access(runUntilPark)` holds on
+  every drainer, and `D_wake_is_access_task` without exception — the SPI untouched.
+  `VirtualDrainerProbeTest` shows it for a fiber start, a wake-up, a cascade and `runUntilPark`
+  (JBR 25.0.4); today's loom failed all four. Why the old handoff, `session.accessSynchronously`
+  on a platform thread, was wrong: it took the lock once the drainer let go, so the drainer's push
+  and a queued request got in first. The risk isn't new: a drainer holding an app lock the segment
+  needs deadlocks, as a platform drainer running the continuation inline does.
+
+  Why it matters to SB-Emulators, read from its code and JDK 25's sources, not run: its request
+  threads are platform, but a foreign virtual thread waking a parked fiber while the lock is free
+  drains the queue itself, and on Linux JDK 25's pollers are virtual
   (`Poller.Mode.VTHREAD_POLLERS`), so a fiber resumed after IO may be drained by one. SB-Emulators
-  throws there and strands the fiber; our loom hands off. Does the SPI allow "returns at once where
-  it can't carry the caller, the fiber handed off" for a drained start and a wake-up, keeping the
-  throw only for the API's `runUntilPark`? Or does the API route those two through a path that
-  never calls `runUntilFirstPark` on a virtual drainer?
-- **`Q_api_class_name`** — the app-facing primitives class: with the SPI lookup behind it, it holds
-  only statics — `UIFibers.runLater(() -> …)` reads well and drops the `BlockingExecutor.get().`
-  prefix.
+  throws there and strands the fiber.
+
+  Left open:
+  - `Q_virtual_request_threads` — with this, loom may run on virtual HTTP request threads: the
+    request thread waits while a platform thread carries each segment. Karibu has no request
+    threads, so check it in a real container (the testapp with `useVirtualThreadsIfAvailable(true)`)
+    before lifting the AGENTS.md invariant and the README requirement.
+  - `Q_poller_submit` — a virtual poller that unparks a fiber now waits out a whole UI segment,
+    holding up IO for other sockets. Route a submit made from a virtual thread that isn't one of our
+    fibers through a platform thread's `session.access`, so a poller never takes the session lock?
+    Our own fibers submit directly, their pretend lock only queuing. Unmeasured.

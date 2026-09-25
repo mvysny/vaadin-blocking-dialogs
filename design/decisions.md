@@ -75,7 +75,8 @@ strategy**), whose request owes the first-park wait of `D_input_exclusion` anywa
 `runUntilPark` runs it inline, parks included. A different promise, a different name, as
 `UI.accessSynchronously` beside `UI.access`. Why loom mounts the first segment on the caller
 (`R_vt_scheduler`) rather than drain: a drain also runs the access tasks queued earlier; and a
-virtual caller, which can't mount it, throws rather than return early. Why not run the UI fiber on
+virtual caller, which can't mount it, waits while a platform thread carries the segment, rather
+than return early. Why not run the UI fiber on
 the request thread itself, released at each park: the answering click would wait in the browser for
 the parked request's response (`R_async_push_no_response`), the call could return only at the
 fiber's end, and under Karibu no thread is left to click OK. Why exceptions go to the

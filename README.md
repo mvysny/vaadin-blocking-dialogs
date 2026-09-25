@@ -51,8 +51,8 @@ The loom strategy additionally needs:
 - **`--add-opens java.base/java.lang=ALL-UNNAMED`** on the JVM: the strategy reflects into the JDK
   to run virtual threads on Vaadin's UI "thread" ([JDK-8308541](https://bugs.openjdk.org/browse/JDK-8308541)).
 - **HTTP requests served by platform threads**, not virtual ones - with Vaadin Boot,
-  `new VaadinBoot().useVirtualThreadsIfAvailable(false)`. On a virtual request thread UI fibers still
-  work, but a double-clicked button may run its blocking listener twice.
+  `new VaadinBoot().useVirtualThreadsIfAvailable(false)`. Virtual request threads are not verified
+  yet: there a platform thread carries each step of a UI fiber while the request thread waits.
 
 ## Usage
 

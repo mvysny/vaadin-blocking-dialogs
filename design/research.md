@@ -77,6 +77,8 @@ above and cut the fat — a marker already says where a claim came from.
   (`submitRunContinuation` → `scheduler.execute`), and nothing after it assumes it hasn't run: the
   scheduler may run it right there, and `start()` returns at its first unmount or end. **[src, JBR
   25.0.4; verified, `LoomBlockingExecutorTest`]**
+- The same from a virtual thread: `start()` calls `scheduler.execute` on the caller. So does an
+  unpark, on the unparking thread. **[verified, JBR 25.0.4, `VirtualDrainerProbeTest`]**
 - `Thread.ofVirtual()` inside such a thread inherits its scheduler; `Thread.ofPlatform()` and
   `new Thread()` don't. **[verified, JDK 25, vaadin-loom]**
 - `ExecutorService.shutdownNow()` interrupts parked virtual threads, and the interrupt unparks them
