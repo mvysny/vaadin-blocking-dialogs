@@ -127,16 +127,22 @@ above and cut the fat — a marker already says where a claim came from.
   listeners see the closing UI as `UI.getCurrent()`, whichever tab's request reaps it. **[src, Vaadin
   25.3.0]**
 
-## R_vt_unmount_releases_lock — loom: every unmount of a UI fiber releases the session lock, not only a park
+## R_vt_unmount_ends_segment — loom: every unmount returns a virtual thread's continuation to its carrier, not only a park
 
-- A UI fiber's continuation ends at *any* unmount, and the carrier's `session.access` task ends with
-  it, so the lock drops. A blocking socket read (a JDBC query) and `Thread.sleep` do this just as
-  `parkAndAwait` does. **[verified 2026-09-24, Vaadin 25.3.0, Karibu 2.7.3, JBR 25.0.4 —
-  `IoUnmountProbeTest`]**
-- Another request of the session runs between two statements of the UI fiber, and a second thread
-  can take the session lock while the UI fiber is mid-read. **[verified, same]**
-- IO before the UI fiber's first dialog lets a double click in: the second click finds no modal open
-  and starts the blocking action a second time. **[verified, same]**
+- `VirtualThread.runContinuation` returns at *any* unmount — a socket read (a JDBC query),
+  `Thread.sleep`, `Thread.yield`, a park — with `afterYield` / `afterDone` already run, so the
+  thread's state is settled by then. **[src, JDK 21 and 25]**
+- So a carrier that runs it as a `session.access` task and returns with it drops the session lock
+  mid-IO: another request ran between two statements, a second thread took the lock mid-read, and
+  a double click got in before the first dialog. **[verified 2026-09-24, Vaadin 25.3.0, Karibu
+  2.7.3, JBR 25.0.4 — the probe that became `IoUnmountTest`]**
+- The wake-up comes through the same scheduler, from the waking thread — or from the carrier
+  itself, inside the returning `runContinuation`, when an unpark beats the park (`afterYield`) and
+  on every `Thread.yield()`. **[src, JDK 25]**
+- `Thread.getStackTrace()` of an unmounted virtual thread on a scheduler of our own returns its
+  suspended stack. **[verified 2026-09-25, JBR 25.0.4 — `LockHoldWatchdogTest`]**
+- `jstack` / `jcmd Thread.print` list platform threads only; virtual threads take
+  `jcmd <pid> Thread.dump_to_file`. **[docs, JEP 444]**
 - A contended `ReentrantLock`, `BlockingQueue.take()` and `synchronized` on JDK 24+ unmount too;
   file IO does not (the JDK pins the carrier for it). **[unverified]**
 

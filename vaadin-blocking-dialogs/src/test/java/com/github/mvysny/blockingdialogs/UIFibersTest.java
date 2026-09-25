@@ -272,12 +272,11 @@ public class UIFibersTest {
         }
 
         /**
-         * Logs the handler's failure: a UI fiber blocked on the contended {@code System.err} unmounts
-         * under loom as on any IO (see {@code R_vt_unmount_releases_lock}), and resumes only at a later
-         * roundtrip - stranded by the teardown otherwise, holding the stream's monitor.
+         * Logs the handler's failure; a UI fiber blocked on the contended {@code System.err} keeps the
+         * lock (see {@code D_loom_holds_the_lock}), so one roundtrip sees it through.
          */
         @Test
-        public void aThrowingErrorHandlerDoesNotEscape() throws InterruptedException {
+        public void aThrowingErrorHandlerDoesNotEscape() {
             VaadinSession.getCurrent().setErrorHandler(new ThrowingErrorHandler());
             UIFibers.runLater(() -> {
                 UIFibers.runUntilPark(() -> {
@@ -285,10 +284,7 @@ public class UIFibersTest {
                 });
                 log.add("A goes on");
             });
-            for (int i = 0; i < 500 && log.isEmpty(); i++) {
-                MockVaadin.clientRoundtrip(true);
-                Thread.sleep(10);
-            }
+            MockVaadin.clientRoundtrip(true);
             assertEquals(List.of("A goes on"), log);
         }
     }

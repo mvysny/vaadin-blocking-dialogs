@@ -162,7 +162,7 @@ unmounts; a platform-thread runner `await()`s a `Condition` of the session's loc
 every hold without a drain or a push (`R_unlock_pushes`) — hold counting for free. So
 `UIFiberRunnerSpi.newCompletable` hands out a `Completable` the runner implements, and every
 `Completable.park()` releases the lock while nothing else does: IO, a bare `future.get()` and a
-`Thread.sleep()` keep it (`R_vt_unmount_releases_lock`). That also makes the first park, where
+`Thread.sleep()` keep it (`D_loom_holds_the_lock`). That also makes the first park, where
 `runUntilFirstPark` returns, a real one and never an IO wait. Why not a `CompletableFuture`: its
 async callbacks run on arbitrary threads, and `cancel()` / `obtrudeValue()` are wake-ups the runner
 never sees. Why not one designated releasing `Completable` per fiber: a fiber parks many times — a
@@ -199,3 +199,18 @@ and `park()` one outside. Both rest on the SPI's promise that a fiber keeps one 
 from start to end, which the `CurrentInstance`s need anyway. The cost: two thread-locals, and no
 runner mounting a raw `Continuation` on whichever carrier is free — which would strand
 `UI.getCurrent()` on the old carrier anyway.
+
+## D_loom_holds_the_lock — Why does loom hold a carrier through a UI fiber's IO, rather than let the lock go at every unmount?
+
+A UI fiber unmounts at any blocking call — a socket read, `sleep`, a contended lock — not only at a
+park (`R_vt_unmount_ends_segment`). Ending the access task there would break the SPI's "only
+`park()` releases the lock": a JDBC call before the first dialog lets the double click in
+(`D_input_exclusion`), and one UI fiber is atomic on one runner, interleaved on another. So the
+carrier stays in its access task, holding the lock, for the UI fiber's next continuation. That
+costs a platform thread per IO wait — what a plain listener and Swing's EDT pay; Vaadin's lock is
+thread-owned and the response needs it anyway. Loom's "a park holds no thread" is for waiting on a
+human. Accepted: a UI fiber waiting on what a parked one holds — a row locked across a `confirm()`
+while another tab of the session updates it — deadlocks until the DB's lock timeout, as on
+session-unlock, and as Swing with a `DOCUMENT_MODAL` dialog. Why a WARN watchdog
+(`LOCK_HOLD_WARN_SECONDS`) rather than thread dumps: the JVM sees no Java-level cycle, and the
+stuck line sits on a virtual thread `jstack` omits.

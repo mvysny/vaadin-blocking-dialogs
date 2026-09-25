@@ -153,6 +153,21 @@ public class VirtualDrainerProbeTest {
     }
 
     @Test
+    public void aSleepOnAVirtualDrainerKeepsTheSessionLock() throws InterruptedException {
+        drainOnAVirtualThread(() -> UIFibers.runLater(() -> {
+            log.add("before sleep");
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            log.add("after sleep");
+        }));
+        assertEquals(List.of("before sleep", "after sleep", "drainer released", "request"), log);
+        assertEquals(List.of(), reportedErrors);
+    }
+
+    @Test
     public void runUntilParkFromAVirtualThreadReturnsAtTheFirstPark() throws InterruptedException {
         final UI ui = UI.getCurrent();
         final VaadinSession session = VaadinSession.getCurrent();

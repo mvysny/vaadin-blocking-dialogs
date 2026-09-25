@@ -30,13 +30,12 @@ pressure; **not needed** = SB-Emulators has no use for it; graduate or keep on i
   `shutdownNow()`'d every parked fiber on session destroy. SB-Emulators' own parks are anchored now,
   so they unwind (`R_session_destroy_detaches`). A *migrator's* `future.get()` / `latch.await()` on
   the EDT still leaks. So SB-Emulators wants one of:
-  - **`loom-holds-the-lock-across-bare-unmounts.md` — preferred.** It is also the faithful Swing
-    behaviour, twice over. A bare wait on the EDT freezes the UI, as it does on the desktop. And a
-    JDBC call in a listener stops letting other requests in, since the EDT never interleaves
-    listeners. That second one is the normal shape of a Swing app, and it is silently interleaved
-    today (`R_vt_unmount_releases_lock`). The idea's precondition on SB-Emulators' side is done:
-    every park SB-Emulators makes goes through `parkAndAwait`.
-  - **`session-destroy-ends-bare-parks.md`**, option C at least, if the above stalls.
+  - **Loom holding the lock across bare unmounts — done (`D_loom_holds_the_lock`).** The faithful
+    Swing behaviour, twice over: a bare wait on the EDT freezes the UI, as on the desktop, and a
+    JDBC call in a listener no longer lets other requests in, since the EDT never interleaves
+    listeners. A bare park now freezes the session loudly instead of leaking it, and the lock-hold
+    watchdog WARNs with its stack.
+  - **`session-destroy-ends-bare-parks.md`**: likely retired by the above; see its `Q_io_unmount`.
 
 ## Later
 

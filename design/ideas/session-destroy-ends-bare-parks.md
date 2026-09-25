@@ -72,7 +72,8 @@ Leaning: **C**, or **A + C** (interrupt *and* report) if the leak is judged wors
   `InterruptedException` or swallows it. Is that close enough, or should the backstop only ever
   target `parkAndAwait` parks, which are already covered by detach? In that case A buys nothing
   and C is the whole idea.
-- `Q_io_unmount`: measured true — `R_vt_unmount_releases_lock`. That breaks B above for good.
-  `loom-holds-the-lock-across-bare-unmounts.md` would also make a bare park hold the lock, which
-  turns this idea's silent leak into a loud freeze and may retire this file. Decide that one
-  first.
+- `Q_io_unmount`: measured true — `R_vt_unmount_ends_segment` — and now moot: loom holds the lock
+  across every unmount but a park (`D_loom_holds_the_lock`), so a bare park freezes the session at
+  once, as under session-unlock, and the lock-hold watchdog WARNs with its stack. The silent leak
+  this idea is about is gone; what's left is a session destroyed while a bare park freezes it.
+  Probably retire this file.
